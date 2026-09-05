@@ -32,7 +32,35 @@ it at any time in the settings window, either by recording a key press or by typ
 (`Super+Alt+k`, `Ctrl+Alt+slash`, …). If the combination is already used by another action you are
 asked whether to replace it.
 
-## Build and install
+## Install
+
+### Arch Linux
+
+```sh
+# from the AUR
+paru -S cosmic-ext-cheatsheet        # or: cosmic-ext-cheatsheet-git
+```
+
+The `PKGBUILD` sources live in [`packaging/aur`](packaging/aur).
+
+### Flatpak
+
+A manifest is in [`packaging/flatpak`](packaging/flatpak). Until the app is on Flathub, build it
+locally:
+
+```sh
+flatpak install -y flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 \
+    org.freedesktop.Sdk.Extension.rust-stable//25.08
+flatpak-builder --user --install --force-clean build \
+    packaging/flatpak/io.github.michelet76.CosmicExtCheatsheet.yml
+```
+
+The Flatpak needs read-only access to the host system directory, because the compositor's shipped
+shortcut defaults live in `/usr/share/cosmic` and Flatpak reserves `/usr` inside the sandbox.
+Actions you click are handed to the host with `flatpak-spawn`, so they run in your session rather
+than in the sandbox.
+
+### From source
 
 Requirements: Rust 1.93+, `just`, and the usual libcosmic build dependencies
 (`pkgconf`, `libxkbcommon`, `wayland`, `fontconfig`, `expat`, a Vulkan loader).
@@ -46,7 +74,7 @@ just build-release
 sudo just install
 ```
 
-Then:
+After installing:
 
 1. Launch **COSMIC Cheatsheet** once from the app library (or run `cosmic-ext-cheatsheet`).
    This registers **Super + Shift + /**.
@@ -100,6 +128,18 @@ just check                                       # clippy
 
 While developing, the registered spawn command points at the binary in `target/`; after
 `just install-user` the app updates it to the installed copy on its next launch.
+
+## Screenshots
+
+![The cheatsheet overlay](res/screenshots/overlay.png)
+
+![Searching the cheatsheet](res/screenshots/search.png)
+
+## Contributing
+
+Issues and pull requests are welcome at
+<https://github.com/michelet76/CosmicExtCheatsheet>. If you package the app for another
+distribution, open an issue and it will be linked here.
 
 ## License
 

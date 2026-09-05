@@ -116,9 +116,7 @@ impl App {
         tracing::info!("running: {command}");
         // The activation token in our environment was issued for this process;
         // a stale one is worse than none for the child.
-        let spawned = std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(command)
+        let spawned = cosmic_ext_cheatsheet::sandbox::shell_command(command)
             .env_remove("XDG_ACTIVATION_TOKEN")
             .env_remove("DESKTOP_STARTUP_ID")
             .spawn();

@@ -16,7 +16,8 @@ use std::path::{Path, PathBuf};
 use cosmic::cosmic_config::{self, Config, ConfigGet, ConfigSet};
 use cosmic_settings_config::shortcuts::{self, Action, Binding, Shortcuts};
 
-use crate::ids::{BIN_NAME, SHORTCUT_DESCRIPTION};
+use crate::ids::{APP_ID, BIN_NAME, SHORTCUT_DESCRIPTION};
+use crate::sandbox;
 
 /// Why a registration change could not be made.
 #[derive(Debug)]
@@ -58,11 +59,15 @@ pub fn context() -> Result<Config, cosmic_config::Error> {
 
 /// The command the compositor should spawn to toggle the cheatsheet.
 ///
-/// Uses the bare binary name when installed system-wide (so the entry stays
-/// valid across upgrades), otherwise the absolute path of the running binary,
-/// because the compositor's `PATH` may not include `~/.local/bin` or a cargo
-/// target directory.
+/// Inside a Flatpak the compositor runs on the host, so the entry has to go
+/// through `flatpak run`. Otherwise it uses the bare binary name when
+/// installed system-wide (so the entry stays valid across upgrades), and the
+/// absolute path of the running binary elsewhere, because the compositor's
+/// `PATH` may not include `~/.local/bin` or a cargo target directory.
 pub fn spawn_command() -> String {
+    if sandbox::active() {
+        return sandbox::host_launch_command();
+    }
     let exe = std::env::current_exe().ok();
     let program = match exe {
         Some(path) if !path.starts_with("/usr/bin") && !path.starts_with("/usr/local/bin") => {
@@ -145,18 +150,28 @@ pub fn split_command(command: &str) -> Vec<String> {
 /// Whether an action is exactly one of ours: this binary (by name or path)
 /// invoked with the single `toggle` argument that `spawn_command` writes.
 pub fn is_own_action(action: &Action) -> bool {
-    match action {
-        Action::Spawn(cmd) => {
-            let words = split_command(cmd);
-            match words.as_slice() {
-                [program, arg] => {
-                    arg == "toggle"
-                        && Path::new(program)
-                            .file_name()
-                            .is_some_and(|name| name == BIN_NAME)
-                }
-                _ => false,
-            }
+    let Action::Spawn(command) = action else {
+        return false;
+    };
+    let words = split_command(command);
+    let Some((last, rest)) = words.split_last() else {
+        return false;
+    };
+    if last != "toggle" {
+        return false;
+    }
+    match rest {
+        // `<path/to/>cosmic-ext-cheatsheet toggle`
+        [program] => Path::new(program)
+            .file_name()
+            .is_some_and(|name| name == BIN_NAME),
+        // `flatpak run [options] <app id> toggle`
+        [program, options @ .., app_id] => {
+            Path::new(program)
+                .file_name()
+                .is_some_and(|name| name == "flatpak")
+                && options.first().is_some_and(|word| word == "run")
+                && app_id == APP_ID
         }
         _ => false,
     }
@@ -285,6 +300,14 @@ pub fn register_checked(
 fn install_rank(command: &str) -> u8 {
     let words = split_command(command);
     let program = words.first().map(String::as_str).unwrap_or_default();
+    // A Flatpak entry is valid on the host regardless of what is installed
+    // natively, and only a sandboxed build should ever replace it.
+    if Path::new(program)
+        .file_name()
+        .is_some_and(|name| name == "flatpak")
+    {
+        return if sandbox::active() { 4 } else { 5 };
+    }
     if program == BIN_NAME {
         return 3;
     }
@@ -373,6 +396,25 @@ mod tests {
         assert!(!own("cosmic-ext-cheatsheet toggle now"));
         assert!(!own("other-tool toggle"));
         assert!(!is_own_action(&Action::Close));
+    }
+
+    #[test]
+    fn recognises_flatpak_launch_commands() {
+        let own = |cmd: &str| is_own_action(&Action::Spawn(cmd.to_owned()));
+        assert!(own(&crate::sandbox::host_launch_command()));
+        assert!(own(
+            "flatpak run io.github.michelet76.CosmicExtCheatsheet toggle"
+        ));
+        assert!(own(
+            "/usr/bin/flatpak run --arch=x86_64 io.github.michelet76.CosmicExtCheatsheet toggle"
+        ));
+        assert!(!own("flatpak run org.example.Other toggle"));
+        assert!(!own(
+            "flatpak kill io.github.michelet76.CosmicExtCheatsheet toggle"
+        ));
+        assert!(!own(
+            "flatpak run io.github.michelet76.CosmicExtCheatsheet settings"
+        ));
     }
 
     #[test]

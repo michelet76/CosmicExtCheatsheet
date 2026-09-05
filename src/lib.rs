@@ -7,6 +7,7 @@ pub mod i18n;
 pub mod ids;
 pub mod keycapture;
 pub mod registration;
+pub mod sandbox;
 pub mod shortcuts;
 pub mod view;
 

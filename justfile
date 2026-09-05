@@ -3,7 +3,7 @@ name := 'cosmic-ext-cheatsheet'
 applet-name := 'cosmic-ext-applet-cheatsheet'
 # Application IDs
 appid := 'io.github.michelet76.CosmicExtCheatsheet'
-applet-appid := 'io.github.michelet76.CosmicExtAppletCheatsheet'
+applet-desktop := appid + '.Applet.desktop'
 
 # Path to root file system, which defaults to `/`.
 rootdir := ''
@@ -15,6 +15,7 @@ cargo-target-dir := env('CARGO_TARGET_DIR', 'target')
 base-dir := absolute_path(clean(rootdir / prefix))
 bin-dir := base-dir / 'bin'
 desktop-dir := base-dir / 'share' / 'applications'
+metainfo-dir := base-dir / 'share' / 'metainfo'
 icons-dir := base-dir / 'share' / 'icons' / 'hicolor' / 'scalable' / 'apps'
 
 # Default recipe which runs `just build-release`
@@ -48,7 +49,8 @@ install:
     install -Dm0755 {{ cargo-target-dir / 'release' / name }} {{ bin-dir / name }}
     install -Dm0755 {{ cargo-target-dir / 'release' / applet-name }} {{ bin-dir / applet-name }}
     install -Dm0644 {{ 'res' / appid + '.desktop' }} {{ desktop-dir / appid + '.desktop' }}
-    install -Dm0644 {{ 'res' / applet-appid + '.desktop' }} {{ desktop-dir / applet-appid + '.desktop' }}
+    install -Dm0644 {{ 'res' / applet-desktop }} {{ desktop-dir / applet-desktop }}
+    install -Dm0644 {{ 'res' / appid + '.metainfo.xml' }} {{ metainfo-dir / appid + '.metainfo.xml' }}
     install -Dm0644 {{ 'res/icons/hicolor/scalable/apps' / appid + '.svg' }} {{ icons-dir / appid + '.svg' }}
     install -Dm0644 {{ 'res/icons/hicolor/scalable/apps' / appid + '-symbolic.svg' }} {{ icons-dir / appid + '-symbolic.svg' }}
 
@@ -59,7 +61,8 @@ install-user: build-release
 # Uninstalls installed files
 uninstall:
     rm -f {{ bin-dir / name }} {{ bin-dir / applet-name }}
-    rm -f {{ desktop-dir / appid + '.desktop' }} {{ desktop-dir / applet-appid + '.desktop' }}
+    rm -f {{ desktop-dir / appid + '.desktop' }} {{ desktop-dir / applet-desktop }}
+    rm -f {{ metainfo-dir / appid + '.metainfo.xml' }}
     rm -f {{ icons-dir / appid + '.svg' }} {{ icons-dir / appid + '-symbolic.svg' }}
 
 uninstall-user:

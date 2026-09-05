@@ -1,0 +1,38 @@
+# Maintainer: Michele Tegon <m.tegon@streamablefinance.com>
+pkgname=cosmic-ext-cheatsheet
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Keyboard shortcut cheatsheet overlay and panel applet for the COSMIC desktop"
+arch=('x86_64' 'aarch64')
+url="https://github.com/michelet76/CosmicExtCheatsheet"
+license=('GPL-3.0-only')
+depends=('libxkbcommon' 'wayland' 'fontconfig' 'vulkan-icd-loader')
+makedepends=('cargo' 'just')
+optdepends=('cosmic-session: the desktop this is built for')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+    cd "CosmicExtCheatsheet-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "CosmicExtCheatsheet-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    just build-release --frozen
+}
+
+check() {
+    cd "CosmicExtCheatsheet-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo test --frozen --release
+}
+
+package() {
+    cd "CosmicExtCheatsheet-$pkgver"
+    just rootdir="$pkgdir" prefix=/usr install
+    install -Dm0644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

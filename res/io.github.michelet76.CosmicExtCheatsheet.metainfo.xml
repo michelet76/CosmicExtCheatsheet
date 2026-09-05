@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 Michele Tegon -->
+<component type="desktop-application">
+  <id>io.github.michelet76.CosmicExtCheatsheet</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <project_group>COSMIC</project_group>
+
+  <name>COSMIC Cheatsheet</name>
+  <summary>Look up your keyboard shortcuts at a glance</summary>
+
+  <developer id="io.github.michelet76">
+    <name>Michele Tegon</name>
+  </developer>
+
+  <description>
+    <p>
+      COSMIC Cheatsheet shows every keyboard shortcut your desktop currently has
+      configured, in one screen you can call up with a key combination of your
+      choice and dismiss just as quickly.
+    </p>
+    <p>
+      The list is read live from the COSMIC compositor, merging the system
+      defaults with your own custom bindings, so it always matches what your
+      keyboard actually does. Shortcuts you changed or disabled in Settings are
+      reflected immediately.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>A full-screen overlay grouped by category: navigation, window management, tiling, system and your own custom shortcuts</li>
+      <li>Opens on a configurable key combination, Super and Shift and slash by default, which takes effect without logging out</li>
+      <li>Search box that filters by action, category, key or command as you type</li>
+      <li>Click a system or custom shortcut to run it straight away, or press Enter to run the first match</li>
+      <li>An optional panel applet that opens the same sheet with one click</li>
+      <li>Follows your COSMIC light or dark theme</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.michelet76.CosmicExtCheatsheet.desktop</launchable>
+
+  <url type="homepage">https://github.com/michelet76/CosmicExtCheatsheet</url>
+  <url type="bugtracker">https://github.com/michelet76/CosmicExtCheatsheet/issues</url>
+  <url type="vcs-browser">https://github.com/michelet76/CosmicExtCheatsheet</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/michelet76/CosmicExtCheatsheet/main/res/screenshots/overlay.png</image>
+      <caption>Every configured shortcut, grouped by category</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/michelet76/CosmicExtCheatsheet/main/res/screenshots/search.png</image>
+      <caption>Type to filter the list; runnable actions are highlighted</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/michelet76/CosmicExtCheatsheet/main/res/screenshots/settings.png</image>
+      <caption>Choose the key combination that opens the cheatsheet</caption>
+    </screenshot>
+  </screenshots>
+
+  <categories>
+    <category>Utility</category>
+  </categories>
+
+  <keywords>
+    <keyword>COSMIC</keyword>
+    <keyword>keyboard</keyword>
+    <keyword>shortcuts</keyword>
+    <keyword>cheatsheet</keyword>
+    <keyword>hotkeys</keyword>
+  </keywords>
+
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <recommends>
+    <display_length compare="ge">768</display_length>
+  </recommends>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#8ba4ff</color>
+    <color type="primary" scheme_preference="dark">#26355f</color>
+  </branding>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-09-05">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

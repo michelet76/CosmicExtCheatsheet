@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.93"
 license = "GPL-3.0-only"
 description = "Keyboard shortcut cheatsheet overlay and panel applet for the COSMIC desktop"
-repository = "https://github.com/michelet76/CosmicCheatSheet"
+repository = "https://github.com/michelet76/CosmicExtCheatsheet"
 
 [lib]
 name = "cosmic_ext_cheatsheet"

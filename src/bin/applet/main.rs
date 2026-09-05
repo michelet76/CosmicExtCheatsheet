@@ -82,6 +82,8 @@ impl cosmic::Application for Applet {
 
 /// Launch (or toggle, via single-instance activation) the overlay binary.
 ///
+/// The overlay ships in the same package, so it is started directly (inside a
+/// Flatpak that means inside the same sandbox, which is what we want).
 /// cosmic-panel gives applets a private `WAYLAND_SOCKET`; it must not leak to
 /// the child, which has to connect to the real display. The applet desktop
 /// entry sets `X-HostWaylandDisplay=true` so `WAYLAND_DISPLAY` is available.
