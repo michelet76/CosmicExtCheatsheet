@@ -28,7 +28,7 @@ use cosmic_ext_cheatsheet::ids::APP_ID;
 use cosmic_ext_cheatsheet::shortcuts::{CheatsheetModel, keys};
 use cosmic_ext_cheatsheet::view::cheatsheet;
 use cosmic_ext_cheatsheet::view::settings::{self, Status};
-use cosmic_ext_cheatsheet::{fl, keycapture, registration};
+use cosmic_ext_cheatsheet::{fl, keycapture, registration, sandbox};
 use cosmic_settings_config::shortcuts::{self, Binding, Shortcuts};
 
 use crate::cli::{Args, Cmd};
@@ -57,6 +57,8 @@ pub enum Message {
     /// Escape pressed while the overlay has focus (routed through the raw
     /// event listener, because a focused text input captures the key).
     OverlayEscape(window::Id),
+    /// The windowed overlay finished opening.
+    OverlayOpened,
     KeyPressed(window::Id, Key, Location, Modifiers),
     ModifiersChanged(Modifiers),
     Exit,
@@ -72,7 +74,11 @@ pub struct App {
     merged: Shortcuts,
     model: CheatsheetModel,
     query: String,
+    /// Layer surface used when layer-shell is available.
     overlay_id: window::Id,
+    /// Plain window used instead when the compositor withholds layer-shell,
+    /// which it does for sandboxed (Flatpak) clients.
+    overlay_window: Option<window::Id>,
     overlay_visible: bool,
     settings_window: Option<window::Id>,
     settings: settings::State,
@@ -164,6 +170,22 @@ impl App {
         self.overlay_visible = true;
         // Every open starts from the full list, whichever way it was closed.
         self.query.clear();
+
+        // cosmic-comp does not offer zwlr_layer_shell_v1 to clients running
+        // under a Wayland security context, which is how Flatpak connects, so
+        // a sandboxed build shows the sheet in a fullscreen window instead.
+        if sandbox::active() {
+            let (id, task) = iced::window::open(iced::window::Settings {
+                decorations: false,
+                transparent: true,
+                fullscreen: true,
+                exit_on_close_request: false,
+                ..Default::default()
+            });
+            self.overlay_window = Some(id);
+            return task.map(|_| cosmic::Action::App(Message::OverlayOpened));
+        }
+
         get_layer_surface(SctkLayerSurfaceSettings {
             id: self.overlay_id,
             layer: Layer::Overlay,
@@ -179,12 +201,20 @@ impl App {
         })
     }
 
+    /// Whether `id` is whichever surface currently shows the cheatsheet.
+    fn is_overlay_surface(&self, id: window::Id) -> bool {
+        self.overlay_window == Some(id) || (self.overlay_window.is_none() && id == self.overlay_id)
+    }
+
     fn hide(&mut self) -> Task<Message> {
         if !self.overlay_visible {
             return Task::none();
         }
         self.overlay_visible = false;
-        let destroy = destroy_layer_surface(self.overlay_id);
+        let destroy = match self.overlay_window.take() {
+            Some(id) => iced::window::close(id),
+            None => destroy_layer_surface(self.overlay_id),
+        };
         if self.should_exit() {
             Task::batch([destroy, delayed_exit()])
         } else {
@@ -464,6 +494,7 @@ impl cosmic::Application for App {
             model: CheatsheetModel::default(),
             query: String::new(),
             overlay_id: window::Id::unique(),
+            overlay_window: None,
             overlay_visible: false,
             settings_window: None,
             settings: settings::State::default(),
@@ -511,9 +542,11 @@ impl cosmic::Application for App {
                     }
                     return stop;
                 }
-                if id == self.overlay_id && self.overlay_visible {
-                    // Closed by the compositor (e.g. output gone).
+                if self.overlay_visible && self.is_overlay_surface(id) {
+                    // Closed by the compositor (e.g. output gone) or by the
+                    // window's own close button in the sandboxed fallback.
                     self.overlay_visible = false;
+                    self.overlay_window = None;
                     if self.should_exit() {
                         return delayed_exit();
                     }
@@ -542,8 +575,9 @@ impl cosmic::Application for App {
                 Task::none()
             }
             Message::Cheatsheet(message) => self.update_cheatsheet(message),
+            Message::OverlayOpened => cosmic::widget::text_input::focus(cheatsheet::search_id()),
             Message::OverlayEscape(id) => {
-                if id != self.overlay_id || !self.overlay_visible {
+                if !self.is_overlay_surface(id) || !self.overlay_visible {
                     return Task::none();
                 }
                 if self.query.is_empty() {
@@ -603,7 +637,7 @@ impl cosmic::Application for App {
     }
 
     fn view_window(&self, id: window::Id) -> Element<'_, Message> {
-        if id == self.overlay_id {
+        if self.overlay_visible && self.is_overlay_surface(id) {
             return cheatsheet::overlay(&self.model, &self.query).map(Message::Cheatsheet);
         }
         if Some(id) == self.settings_window {
@@ -722,6 +756,9 @@ impl App {
             return Task::none();
         }
         self.overlay_visible = false;
-        destroy_layer_surface(self.overlay_id)
+        match self.overlay_window.take() {
+            Some(id) => iced::window::close(id),
+            None => destroy_layer_surface(self.overlay_id),
+        }
     }
 }

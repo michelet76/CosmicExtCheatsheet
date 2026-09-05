@@ -1,6 +1,6 @@
 id: io.github.michelet76.CosmicExtCheatsheet
 runtime: org.freedesktop.Platform
-runtime-version: '26.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -60,6 +60,6 @@ modules:
     sources:
       - type: git
         url: https://github.com/michelet76/CosmicExtCheatsheet.git
-        tag: v0.1.0
-        commit: 45d7e8999be4b60d1423aab92c7dcce79e145319
+        tag: v0.1.1
+        commit: PLACEHOLDER
       - cargo-sources.json

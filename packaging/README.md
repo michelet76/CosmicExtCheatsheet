@@ -34,6 +34,17 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest \
     packaging/flatpak/io.github.michelet76.CosmicExtCheatsheet.yml
 ```
 
+### The overlay falls back to a window inside the sandbox
+
+cosmic-comp does not advertise `zwlr_layer_shell_v1` to clients connecting through a Wayland
+security context, which is how Flatpak connects every sandboxed app. Verified with
+`WAYLAND_DEBUG=1`: the unsandboxed connection sees the global, the sandboxed one sees
+`xdg_wm_base` and no layer shell, and the overlay silently never maps.
+
+The app therefore detects the sandbox and opens the cheatsheet as a fullscreen window instead.
+Native installations keep the layer-shell overlay, which draws above the panel and takes exclusive
+keyboard focus. Nothing else differs.
+
 ### Three permissions need a Flathub exception
 
 The linter reports these as errors. All three are in the category Flathub grants "on sufficient
@@ -88,3 +99,12 @@ Publishing needs an SSH key registered on an aur.archlinux.org account. Repeat w
 - **cosmic-utils**, a community organisation hosting many COSMIC applets. They accept transfers of
   existing projects and hand out membership on request through their Mattermost channel.
 - The COSMIC and Pop!\_OS community channels, and r/pop_os.
+
+## Removing the build tooling
+
+The local Flatpak verification pulls in a few gigabytes of runtimes. To remove them:
+
+```sh
+flatpak uninstall --user org.flatpak.Builder
+flatpak uninstall --user --unused
+```

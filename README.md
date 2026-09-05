@@ -60,6 +60,10 @@ shortcut defaults live in `/usr/share/cosmic` and Flatpak reserves `/usr` inside
 Actions you click are handed to the host with `flatpak-spawn`, so they run in your session rather
 than in the sandbox.
 
+Inside a sandbox the sheet opens as a fullscreen window rather than a layer-shell overlay, because
+COSMIC does not offer layer-shell to sandboxed clients. A native install gets the overlay, which
+draws above the panel.
+
 ### From source
 
 Requirements: Rust 1.93+, `just`, and the usual libcosmic build dependencies

@@ -2,3 +2,6 @@
 /vendor
 /vendor.tar
 /.cargo
+/build-dir
+/.flatpak-builder
+/fprepo
