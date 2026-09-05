@@ -44,21 +44,18 @@ pub enum Message {
     Show,
     Hide,
     Toggle,
-    OpenSettings,
     CloseWindow(window::Id),
     WindowClosed(window::Id),
     Layer(LayerEvent, window::Id),
     ConfigUpdated(CheatsheetConfig),
     ShortcutsUpdated(shortcuts::Config),
     Settings(settings::Message),
-    KeyPressed(Key, Location, Modifiers),
+    Cheatsheet(cheatsheet::Message),
+    /// Escape pressed while the overlay has focus (routed through the raw
+    /// event listener, because a focused text input captures the key).
+    OverlayEscape(window::Id),
+    KeyPressed(window::Id, Key, Location, Modifiers),
     ModifiersChanged(Modifiers),
-    /// Run the command behind a clicked row, then close the overlay.
-    Run(String),
-    SearchChanged(String),
-    SearchClear,
-    /// Enter in the search box: run the first runnable match.
-    SearchSubmit,
     Exit,
     Noop,
 }
@@ -72,7 +69,6 @@ pub struct App {
     merged: Shortcuts,
     model: CheatsheetModel,
     query: String,
-    filtered: CheatsheetModel,
     overlay_id: window::Id,
     overlay_visible: bool,
     settings_window: Option<window::Id>,
@@ -90,16 +86,26 @@ fn delayed_exit() -> Task<Message> {
 }
 
 impl App {
+    /// Rebuild the cheatsheet from the current merged bindings.
+    fn rebuild_model(&mut self) {
+        let system_actions = self
+            .shortcuts_ctx
+            .as_ref()
+            .map(shortcuts::system_actions)
+            .unwrap_or_default();
+        self.model = CheatsheetModel::from_shortcuts(&self.merged, &system_actions);
+    }
+
     fn reload_shortcuts(&mut self) {
         if let Some(ctx) = &self.shortcuts_ctx {
             self.merged = shortcuts::shortcuts(ctx);
-            self.model = CheatsheetModel::from_shortcuts(&self.merged, &shortcuts::system_actions(ctx));
-            self.refilter();
+            self.rebuild_model();
         }
     }
 
-    fn refilter(&mut self) {
-        self.filtered = self.model.filter(&self.query);
+    fn clear_search(&mut self) -> Task<Message> {
+        self.query.clear();
+        cosmic::widget::text_input::focus(cheatsheet::search_id())
     }
 
     /// Run a shell command the way the compositor does for `Spawn` bindings.
@@ -128,6 +134,8 @@ impl App {
             return Task::none();
         }
         self.overlay_visible = true;
+        // Every open starts from the full list, whichever way it was closed.
+        self.query.clear();
         get_layer_surface(SctkLayerSurfaceSettings {
             id: self.overlay_id,
             layer: Layer::Overlay,
@@ -148,8 +156,6 @@ impl App {
             return Task::none();
         }
         self.overlay_visible = false;
-        self.query.clear();
-        self.refilter();
         let destroy = destroy_layer_surface(self.overlay_id);
         if self.should_exit() {
             Task::batch([destroy, delayed_exit()])
@@ -292,6 +298,34 @@ impl App {
         Task::none()
     }
 
+    fn update_cheatsheet(&mut self, message: cheatsheet::Message) -> Task<Message> {
+        use cheatsheet::Message as M;
+        match message {
+            M::Close => self.hide(),
+            M::OpenSettings => {
+                let hide = self.hide_keep_alive();
+                hide.chain(self.open_settings())
+            }
+            M::Run(command) => {
+                Self::run_command(&command);
+                self.hide()
+            }
+            M::SearchChanged(query) => {
+                self.query = query;
+                Task::none()
+            }
+            M::SearchClear => self.clear_search(),
+            M::SearchSubmit => {
+                let command = self.model.search(&self.query).enter_target().and_then(|e| e.command.clone());
+                match command {
+                    Some(command) => self.update_cheatsheet(M::Run(command)),
+                    None => Task::none(),
+                }
+            }
+            M::Noop => Task::none(),
+        }
+    }
+
     fn settings_page(&self) -> Element<'_, Message> {
         settings::page(&self.settings, &self.config, self.is_registered()).map(Message::Settings)
     }
@@ -369,7 +403,6 @@ impl cosmic::Application for App {
             merged: Shortcuts::default(),
             model: CheatsheetModel::default(),
             query: String::new(),
-            filtered: CheatsheetModel::default(),
             overlay_id: window::Id::unique(),
             overlay_visible: false,
             settings_window: None,
@@ -404,10 +437,6 @@ impl cosmic::Application for App {
                     self.show()
                 }
             }
-            Message::OpenSettings => {
-                let hide = self.hide_keep_alive();
-                hide.chain(self.open_settings())
-            }
             Message::CloseWindow(id) => iced::window::close(id),
             Message::WindowClosed(id) => {
                 if self.settings_window == Some(id) {
@@ -434,7 +463,7 @@ impl cosmic::Application for App {
                 match event {
                     LayerEvent::Unfocused => self.hide(),
                     LayerEvent::Focused => cosmic::widget::text_input::focus(cheatsheet::search_id()),
-                    LayerEvent::Done => Task::none(),
+                    _ => Task::none(),
                 }
             }
             Message::ConfigUpdated(config) => {
@@ -445,32 +474,19 @@ impl cosmic::Application for App {
                 let mut merged = config.defaults;
                 merged.0.extend(config.custom.0);
                 self.merged = merged;
-                let system_actions = self
-                    .shortcuts_ctx
-                    .as_ref()
-                    .map(shortcuts::system_actions)
-                    .unwrap_or_default();
-                self.model = CheatsheetModel::from_shortcuts(&self.merged, &system_actions);
-                self.refilter();
+                self.rebuild_model();
                 Task::none()
             }
-            Message::SearchChanged(query) => {
-                self.query = query;
-                self.refilter();
-                Task::none()
-            }
-            Message::SearchClear => {
-                self.query.clear();
-                self.refilter();
-                cosmic::widget::text_input::focus(cheatsheet::search_id())
-            }
-            Message::SearchSubmit => match self.filtered.first_runnable().and_then(|e| e.command.clone()) {
-                Some(command) if !self.query.trim().is_empty() => self.update(Message::Run(command)),
-                _ => Task::none(),
-            },
-            Message::Run(command) => {
-                Self::run_command(&command);
-                self.hide()
+            Message::Cheatsheet(message) => self.update_cheatsheet(message),
+            Message::OverlayEscape(id) => {
+                if id != self.overlay_id || !self.overlay_visible {
+                    return Task::none();
+                }
+                if self.query.is_empty() {
+                    self.hide()
+                } else {
+                    self.clear_search()
+                }
             }
             Message::Settings(message) => self.update_settings(message),
             Message::ModifiersChanged(modifiers) => {
@@ -481,8 +497,10 @@ impl cosmic::Application for App {
                 }
                 Task::none()
             }
-            Message::KeyPressed(key, location, modifiers) => {
-                if !self.settings.recording {
+            Message::KeyPressed(id, key, location, modifiers) => {
+                // Only keys pressed in the window that hosts the settings page.
+                let settings_id = self.settings_window.or_else(|| self.core.main_window_id());
+                if !self.settings.recording || self.overlay_visible || Some(id) != settings_id {
                     return Task::none();
                 }
                 if key == Key::Named(Named::Escape) && modifiers.is_empty() {
@@ -515,20 +533,7 @@ impl cosmic::Application for App {
 
     fn view_window(&self, id: window::Id) -> Element<'_, Message> {
         if id == self.overlay_id {
-            return cheatsheet::overlay(
-                &self.filtered,
-                &self.query,
-                !self.model.is_empty(),
-                cheatsheet::Callbacks {
-                    on_close: Message::Hide,
-                    on_settings: Message::OpenSettings,
-                    on_noop: Message::Noop,
-                    on_run: Message::Run,
-                    on_search: Message::SearchChanged,
-                    on_search_clear: Message::SearchClear,
-                    on_search_submit: Message::SearchSubmit,
-                },
-            );
+            return cheatsheet::overlay(&self.model, &self.query).map(Message::Cheatsheet);
         }
         if Some(id) == self.settings_window {
             let focused = self.core.focused_window().is_some_and(|f| f == id);
@@ -563,13 +568,18 @@ impl cosmic::Application for App {
                     Some(Message::Layer(event, layer_id))
                 }
                 iced::Event::Window(window::Event::Closed) => Some(Message::WindowClosed(id)),
+                iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: Key::Named(Named::Escape),
+                    modifiers,
+                    ..
+                }) if modifiers.is_empty() => Some(Message::OverlayEscape(id)),
                 _ => None,
             }),
         ];
         if self.settings.recording {
-            subs.push(listen_with(|event, _status, _id| match event {
+            subs.push(listen_with(|event, _status, id| match event {
                 iced::Event::Keyboard(keyboard::Event::KeyPressed { key, location, modifiers, .. }) => {
-                    Some(Message::KeyPressed(key, location, modifiers))
+                    Some(Message::KeyPressed(id, key, location, modifiers))
                 }
                 iced::Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
                     Some(Message::ModifiersChanged(modifiers))
@@ -581,16 +591,10 @@ impl cosmic::Application for App {
     }
 
     fn on_escape(&mut self) -> Task<Message> {
+        // The overlay handles Escape itself (see the raw listener), because a
+        // focused text input captures the key before keyboard navigation sees it.
         if self.settings.recording {
             return self.stop_recording();
-        }
-        if self.overlay_visible {
-            if !self.query.is_empty() {
-                self.query.clear();
-                self.refilter();
-                return cosmic::widget::text_input::focus(cheatsheet::search_id());
-            }
-            return self.hide();
         }
         Task::none()
     }
@@ -629,7 +633,7 @@ impl cosmic::Application for App {
         match cmd {
             Cmd::Toggle => self.update(Message::Toggle),
             Cmd::Show => self.update(Message::Show),
-            Cmd::Hide => self.hide(),
+            Cmd::Hide => self.update(Message::Hide),
             Cmd::Settings => self.open_settings(),
             Cmd::Register | Cmd::Unregister => Task::none(),
         }

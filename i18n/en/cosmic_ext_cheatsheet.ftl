@@ -3,7 +3,7 @@ applet-tooltip = Keyboard shortcuts
 shortcut-description = COSMIC Cheatsheet
 
 # Overlay
-overlay-hint = Click a highlighted row to run it. Esc or click outside to close.
+overlay-hint = Type to search, Enter runs the highlighted match. Click a highlighted row to run it. Esc or click outside to close.
 overlay-settings = Settings
 overlay-close = Close
 overlay-empty = No shortcuts found. Is COSMIC running?

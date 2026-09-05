@@ -25,6 +25,42 @@ pub struct Entry {
     /// actions and custom `Spawn` bindings). Compositor-internal actions such
     /// as focus or workspace switching have none and cannot be triggered.
     pub command: Option<String>,
+    /// Lower-cased text used by [`CheatsheetModel::search`]: label, category,
+    /// key chips and command, space-separated.
+    pub search_text: String,
+}
+
+/// One category of a search result, borrowing from the model.
+#[derive(Debug, Clone)]
+pub struct MatchedCategory<'a> {
+    pub category: &'a Category,
+    pub entries: Vec<&'a Entry>,
+}
+
+/// Result of [`CheatsheetModel::search`].
+#[derive(Debug, Clone)]
+pub struct Search<'a> {
+    pub categories: Vec<MatchedCategory<'a>>,
+    /// Whether the query contained any search terms.
+    pub active: bool,
+}
+
+impl<'a> Search<'a> {
+    pub fn is_empty(&self) -> bool {
+        self.categories.iter().all(|c| c.entries.is_empty())
+    }
+
+    /// The first visible entry, when it can be run by clicking. This is what
+    /// Enter in the search box runs, and what the view highlights.
+    pub fn enter_target(&self) -> Option<&'a Entry> {
+        if !self.active {
+            return None;
+        }
+        self.categories
+            .first()
+            .and_then(|c| c.entries.first().copied())
+            .filter(|e| e.command.is_some())
+    }
 }
 
 /// A titled group of entries.
@@ -85,6 +121,7 @@ impl CheatsheetModel {
                 label: localize::action_label(action, bindings.first().copied()),
                 bindings: bindings.into_iter().map(keys::chips).collect(),
                 command,
+                search_text: String::new(),
             };
             categories
                 .entry(categories::category_of(action))
@@ -95,63 +132,38 @@ impl CheatsheetModel {
         Self {
             categories: categories
                 .into_iter()
-                .map(|(kind, entries)| Category {
-                    kind,
-                    title: localize::category_title(kind),
-                    entries,
+                .map(|(kind, mut entries)| {
+                    let title = localize::category_title(kind);
+                    for entry in &mut entries {
+                        entry.search_text = search_text(entry, &title);
+                    }
+                    Category { kind, title, entries }
                 })
                 .collect(),
         }
     }
 
-    /// Entries whose label, category, key chips or command contain every
-    /// whitespace-separated term of `query` (case-insensitive). An empty
-    /// query returns everything.
-    pub fn filter(&self, query: &str) -> Self {
+    /// Entries whose search text contains every whitespace-separated term of
+    /// `query` (case-insensitive). An empty query matches everything and the
+    /// result is marked inactive.
+    pub fn search(&self, query: &str) -> Search<'_> {
         let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
-        if terms.is_empty() {
-            return self.clone();
-        }
         let categories = self
             .categories
             .iter()
             .filter_map(|category| {
-                let title = category.title.to_lowercase();
-                let entries: Vec<Entry> = category
+                let entries: Vec<&Entry> = category
                     .entries
                     .iter()
-                    .filter(|entry| {
-                        let mut haystack = entry.label.to_lowercase();
-                        haystack.push(' ');
-                        haystack.push_str(&title);
-                        for chips in &entry.bindings {
-                            haystack.push(' ');
-                            haystack.push_str(&chips.join("+").to_lowercase());
-                        }
-                        if let Some(command) = &entry.command {
-                            haystack.push(' ');
-                            haystack.push_str(&command.to_lowercase());
-                        }
-                        terms.iter().all(|term| haystack.contains(term.as_str()))
-                    })
-                    .cloned()
+                    .filter(|entry| terms.iter().all(|term| entry.search_text.contains(term.as_str())))
                     .collect();
-                (!entries.is_empty()).then(|| Category {
-                    kind: category.kind,
-                    title: category.title.clone(),
-                    entries,
-                })
+                (!entries.is_empty()).then_some(MatchedCategory { category, entries })
             })
             .collect();
-        Self { categories }
-    }
-
-    /// The first entry that can be run by clicking, in display order.
-    pub fn first_runnable(&self) -> Option<&Entry> {
-        self.categories
-            .iter()
-            .flat_map(|c| c.entries.iter())
-            .find(|e| e.command.is_some())
+        Search {
+            categories,
+            active: !terms.is_empty(),
+        }
     }
 
     /// Total number of entries across all categories.
@@ -162,4 +174,21 @@ impl CheatsheetModel {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
+
+fn search_text(entry: &Entry, category_title: &str) -> String {
+    let mut text = entry.label.to_lowercase();
+    text.push(' ');
+    text.push_str(&category_title.to_lowercase());
+    for chips in &entry.bindings {
+        for chip in chips {
+            text.push(' ');
+            text.push_str(&chip.to_lowercase());
+        }
+    }
+    if let Some(command) = &entry.command {
+        text.push(' ');
+        text.push_str(&command.to_lowercase());
+    }
+    text
 }

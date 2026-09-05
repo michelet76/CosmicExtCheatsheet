@@ -2,57 +2,50 @@
 
 //! The cheatsheet overlay content.
 
-use cosmic::iced::widget::responsive;
+use cosmic::Element;
+use cosmic::iced::widget::{Column, Row, Space, responsive};
 use cosmic::iced::{Alignment, Border, Color, Length, Shadow};
 use cosmic::theme;
-use cosmic::iced::widget::{Column, Row, Space};
 use cosmic::widget::{button, container, icon, mouse_area, scrollable, search_input, text};
-use cosmic::Element;
 
 use crate::fl;
-use crate::shortcuts::{Category, CheatsheetModel};
+use crate::shortcuts::{CheatsheetModel, Entry, MatchedCategory};
 
 const COLUMN_WIDTH: f32 = 440.0;
 const MAX_COLUMNS: usize = 4;
 
-/// Build the full-surface overlay: a dimmed backdrop (click closes) with a
-/// centred card listing every category.
+/// Messages emitted by the overlay.
+#[derive(Debug, Clone)]
+pub enum Message {
+    Close,
+    OpenSettings,
+    /// Run the command behind a clicked row.
+    Run(String),
+    SearchChanged(String),
+    SearchClear,
+    /// Enter in the search box.
+    SearchSubmit,
+    /// A click on the card itself; swallowed so it does not reach the backdrop.
+    Noop,
+}
+
 /// Widget id of the search box, so the app can focus it when the overlay opens.
 pub fn search_id() -> cosmic::widget::Id {
     cosmic::widget::Id::new("cheatsheet-search")
 }
 
-/// Callbacks for the overlay's interactive parts.
-pub struct Callbacks<M> {
-    pub on_close: M,
-    pub on_settings: M,
-    pub on_noop: M,
-    pub on_run: fn(String) -> M,
-    pub on_search: fn(String) -> M,
-    pub on_search_clear: M,
-    pub on_search_submit: M,
-}
-
-pub fn overlay<'a, M>(model: &'a CheatsheetModel, query: &'a str, has_any: bool, cb: Callbacks<M>) -> Element<'a, M>
-where
-    M: Clone + 'static,
-{
+/// Build the full-surface overlay: a dimmed backdrop (click closes) with a
+/// centred card listing every category that matches `query`.
+pub fn overlay<'a>(model: &'a CheatsheetModel, query: &'a str) -> Element<'a, Message> {
     let spacing = theme::spacing();
-    let Callbacks {
-        on_close,
-        on_settings,
-        on_noop,
-        on_run,
-        on_search,
-        on_search_clear,
-        on_search_submit,
-    } = cb;
+    let search = model.search(query);
+    let enter_target = search.enter_target().map(std::ptr::from_ref);
 
-    let search = search_input(fl!("overlay-search"), query)
+    let search_box = search_input(fl!("overlay-search"), query)
         .id(search_id())
-        .on_input(on_search)
-        .on_clear(on_search_clear.clone())
-        .on_submit(move |_| on_search_submit.clone())
+        .on_input(Message::SearchChanged)
+        .on_clear(Message::SearchClear)
+        .on_submit(|_| Message::SearchSubmit)
         .width(Length::Fixed(320.0));
 
     let header = Row::new()
@@ -61,28 +54,29 @@ where
         .push(text::title2(fl!("app-title")))
         .push(text::caption(fl!("overlay-hint")).class(theme::Text::Default))
         .push(Space::new().width(Length::Fill))
-        .push(search)
+        .push(search_box)
         .push(
             button::icon(icon::from_name("preferences-system-symbolic"))
                 .tooltip(fl!("overlay-settings"))
-                .on_press(on_settings),
+                .on_press(Message::OpenSettings),
         )
         .push(
             button::icon(icon::from_name("window-close-symbolic"))
                 .tooltip(fl!("overlay-close"))
-                .on_press(on_close.clone()),
+                .on_press(Message::Close),
         );
 
-    let body: Element<'a, M> = if model.is_empty() {
-        let message = if has_any { fl!("overlay-no-match") } else { fl!("overlay-empty") };
+    let body: Element<'a, Message> = if search.is_empty() {
+        let message = if search.active { fl!("overlay-no-match") } else { fl!("overlay-empty") };
         container(text::body(message)).center(Length::Fill).into()
     } else {
+        let matched = search.categories;
         responsive(move |size| {
             let columns = ((size.width / COLUMN_WIDTH).floor() as usize).clamp(1, MAX_COLUMNS);
-            let mut cols: Vec<Vec<&'a Category>> = vec![Vec::new(); columns];
+            let mut cols: Vec<Vec<&MatchedCategory<'a>>> = vec![Vec::new(); columns];
             let mut heights = vec![0usize; columns];
             // Greedy balance by row count.
-            for category in &model.categories {
+            for category in &matched {
                 let shortest = (0..columns).min_by_key(|i| heights[*i]).unwrap_or(0);
                 heights[shortest] += category.entries.len() + 2;
                 cols[shortest].push(category);
@@ -91,7 +85,7 @@ where
             for col in cols {
                 let mut column = Column::new().spacing(spacing.space_m).width(Length::FillPortion(1));
                 for category in col {
-                    column = column.push(category_card(category, on_run));
+                    column = column.push(category_card(category, enter_target));
                 }
                 layout = layout.push(column);
             }
@@ -102,54 +96,50 @@ where
         .into()
     };
 
-    let card = container(
-        Column::new()
-            .spacing(spacing.space_m)
-            .push(header)
-            .push(body),
-    )
-    .padding(spacing.space_l)
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .max_width(1800.0)
-    .class(theme::Container::custom(|theme| {
-        let cosmic = theme.cosmic();
-        let mut bg = Color::from(cosmic.bg_color());
-        bg.a = 0.98;
-        container::Style {
-            background: Some(bg.into()),
-            border: Border {
-                radius: cosmic.radius_l().into(),
-                width: 1.0,
-                color: Color::from(cosmic.bg_divider()),
-            },
-            shadow: Shadow::default(),
-            text_color: Some(Color::from(cosmic.on_bg_color())),
-            icon_color: Some(Color::from(cosmic.on_bg_color())),
-            snap: false,
-        }
-    }));
+    let card = container(Column::new().spacing(spacing.space_m).push(header).push(body))
+        .padding(spacing.space_l)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .max_width(1800.0)
+        .class(theme::Container::custom(|theme| {
+            let cosmic = theme.cosmic();
+            let mut bg = Color::from(cosmic.bg_color());
+            bg.a = 0.98;
+            container::Style {
+                background: Some(bg.into()),
+                border: Border {
+                    radius: cosmic.radius_l().into(),
+                    width: 1.0,
+                    color: Color::from(cosmic.bg_divider()),
+                },
+                shadow: Shadow::default(),
+                text_color: Some(Color::from(cosmic.on_bg_color())),
+                icon_color: Some(Color::from(cosmic.on_bg_color())),
+                snap: false,
+            }
+        }));
 
     // The card swallows clicks; clicks on the backdrop close the overlay.
-    let card = mouse_area(card).on_press(on_noop);
+    let card = mouse_area(card).on_press(Message::Noop);
 
     let backdrop = container(card)
-        .padding(theme::spacing().space_xl)
+        .padding(spacing.space_xl)
         .center(Length::Fill)
         .class(theme::Container::custom(|_| container::Style {
             background: Some(Color { a: 0.45, ..Color::BLACK }.into()),
             ..Default::default()
         }));
 
-    mouse_area(backdrop).on_press(on_close).into()
+    mouse_area(backdrop).on_press(Message::Close).into()
 }
 
-fn category_card<'a, M: Clone + 'static>(category: &'a Category, on_run: fn(String) -> M) -> Element<'a, M> {
+fn category_card<'a>(matched: &MatchedCategory<'a>, enter_target: Option<*const Entry>) -> Element<'a, Message> {
     let spacing = theme::spacing();
     let muted = muted_color();
     let mut list = Column::new().spacing(spacing.space_xxxs);
-    list = list.push(text::heading(&category.title));
-    for entry in &category.entries {
+    list = list.push(text::heading(&matched.category.title));
+    for entry in &matched.entries {
+        let entry: &'a Entry = entry;
         let runnable = entry.command.is_some();
         let mut combos = Column::new().spacing(spacing.space_xxxs).align_x(Alignment::End);
         for chips in &entry.bindings {
@@ -165,17 +155,18 @@ fn category_card<'a, M: Clone + 'static>(category: &'a Category, on_run: fn(Stri
             .spacing(spacing.space_s)
             .push(label.width(Length::Fill))
             .push(combos);
-        let line: Element<'a, M> = match &entry.command {
-            Some(command) => button::custom(line)
-                .class(theme::Button::Text)
-                .width(Length::Fill)
-                .padding([spacing.space_xxxs, spacing.space_xs])
-                .on_press(on_run(command.clone()))
-                .into(),
-            None => container(line)
-                .width(Length::Fill)
-                .padding([spacing.space_xxxs, spacing.space_xs])
-                .into(),
+        let padding = [spacing.space_xxxs, spacing.space_xs];
+        let line: Element<'a, Message> = match &entry.command {
+            Some(command) => {
+                let is_target = enter_target == Some(std::ptr::from_ref(entry));
+                button::custom(line)
+                    .class(if is_target { theme::Button::Suggested } else { theme::Button::Text })
+                    .width(Length::Fill)
+                    .padding(padding)
+                    .on_press(Message::Run(command.clone()))
+                    .into()
+            }
+            None => container(line).width(Length::Fill).padding(padding).into(),
         };
         list = list.push(line);
     }
@@ -193,7 +184,7 @@ fn muted_color() -> Color {
     color
 }
 
-fn chip_row<'a, M: 'static>(chips: &'a [String], enabled: bool) -> Element<'a, M> {
+fn chip_row<'a>(chips: &'a [String], enabled: bool) -> Element<'a, Message> {
     let spacing = theme::spacing();
     let mut r = Row::new().spacing(spacing.space_xxxs).align_y(Alignment::Center);
     let last = chips.len().saturating_sub(1);
@@ -206,7 +197,7 @@ fn chip_row<'a, M: 'static>(chips: &'a [String], enabled: bool) -> Element<'a, M
     r.into()
 }
 
-fn chip_widget<'a, M: 'static>(label: &'a str, enabled: bool) -> Element<'a, M> {
+fn chip_widget<'a>(label: &'a str, enabled: bool) -> Element<'a, Message> {
     let alpha = if enabled { 1.0 } else { 0.55 };
     container(text::caption_heading(label))
         .padding([2, 7])
