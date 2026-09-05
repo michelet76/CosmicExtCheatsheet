@@ -61,5 +61,5 @@ modules:
       - type: git
         url: https://github.com/michelet76/CosmicExtCheatsheet.git
         tag: v0.1.1
-        commit: PLACEHOLDER
+        commit: 096c6f41b79f86c6152d8a05bc82f54439f3aef7
       - cargo-sources.json
