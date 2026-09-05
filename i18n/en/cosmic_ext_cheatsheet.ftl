@@ -7,6 +7,8 @@ overlay-hint = Click a highlighted row to run it. Esc or click outside to close.
 overlay-settings = Settings
 overlay-close = Close
 overlay-empty = No shortcuts found. Is COSMIC running?
+overlay-no-match = Nothing matches your search.
+overlay-search = Search shortcuts
 
 # Settings window
 settings-title = Cheatsheet settings

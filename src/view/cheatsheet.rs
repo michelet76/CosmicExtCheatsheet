@@ -6,7 +6,7 @@ use cosmic::iced::widget::responsive;
 use cosmic::iced::{Alignment, Border, Color, Length, Shadow};
 use cosmic::theme;
 use cosmic::iced::widget::{Column, Row, Space};
-use cosmic::widget::{button, container, icon, mouse_area, scrollable, text};
+use cosmic::widget::{button, container, icon, mouse_area, scrollable, search_input, text};
 use cosmic::Element;
 
 use crate::fl;
@@ -17,17 +17,43 @@ const MAX_COLUMNS: usize = 4;
 
 /// Build the full-surface overlay: a dimmed backdrop (click closes) with a
 /// centred card listing every category.
-pub fn overlay<'a, M>(
-    model: &'a CheatsheetModel,
-    on_close: M,
-    on_settings: M,
-    on_noop: M,
-    on_run: fn(String) -> M,
-) -> Element<'a, M>
+/// Widget id of the search box, so the app can focus it when the overlay opens.
+pub fn search_id() -> cosmic::widget::Id {
+    cosmic::widget::Id::new("cheatsheet-search")
+}
+
+/// Callbacks for the overlay's interactive parts.
+pub struct Callbacks<M> {
+    pub on_close: M,
+    pub on_settings: M,
+    pub on_noop: M,
+    pub on_run: fn(String) -> M,
+    pub on_search: fn(String) -> M,
+    pub on_search_clear: M,
+    pub on_search_submit: M,
+}
+
+pub fn overlay<'a, M>(model: &'a CheatsheetModel, query: &'a str, has_any: bool, cb: Callbacks<M>) -> Element<'a, M>
 where
     M: Clone + 'static,
 {
     let spacing = theme::spacing();
+    let Callbacks {
+        on_close,
+        on_settings,
+        on_noop,
+        on_run,
+        on_search,
+        on_search_clear,
+        on_search_submit,
+    } = cb;
+
+    let search = search_input(fl!("overlay-search"), query)
+        .id(search_id())
+        .on_input(on_search)
+        .on_clear(on_search_clear.clone())
+        .on_submit(move |_| on_search_submit.clone())
+        .width(Length::Fixed(320.0));
 
     let header = Row::new()
         .align_y(Alignment::Center)
@@ -35,6 +61,7 @@ where
         .push(text::title2(fl!("app-title")))
         .push(text::caption(fl!("overlay-hint")).class(theme::Text::Default))
         .push(Space::new().width(Length::Fill))
+        .push(search)
         .push(
             button::icon(icon::from_name("preferences-system-symbolic"))
                 .tooltip(fl!("overlay-settings"))
@@ -47,9 +74,8 @@ where
         );
 
     let body: Element<'a, M> = if model.is_empty() {
-        container(text::body(fl!("overlay-empty")))
-            .center(Length::Fill)
-            .into()
+        let message = if has_any { fl!("overlay-no-match") } else { fl!("overlay-empty") };
+        container(text::body(message)).center(Length::Fill).into()
     } else {
         responsive(move |size| {
             let columns = ((size.width / COLUMN_WIDTH).floor() as usize).clamp(1, MAX_COLUMNS);

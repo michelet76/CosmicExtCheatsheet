@@ -55,6 +55,10 @@ pub enum Message {
     ModifiersChanged(Modifiers),
     /// Run the command behind a clicked row, then close the overlay.
     Run(String),
+    SearchChanged(String),
+    SearchClear,
+    /// Enter in the search box: run the first runnable match.
+    SearchSubmit,
     Exit,
     Noop,
 }
@@ -67,6 +71,8 @@ pub struct App {
     shortcuts_ctx: Option<Config>,
     merged: Shortcuts,
     model: CheatsheetModel,
+    query: String,
+    filtered: CheatsheetModel,
     overlay_id: window::Id,
     overlay_visible: bool,
     settings_window: Option<window::Id>,
@@ -88,7 +94,12 @@ impl App {
         if let Some(ctx) = &self.shortcuts_ctx {
             self.merged = shortcuts::shortcuts(ctx);
             self.model = CheatsheetModel::from_shortcuts(&self.merged, &shortcuts::system_actions(ctx));
+            self.refilter();
         }
+    }
+
+    fn refilter(&mut self) {
+        self.filtered = self.model.filter(&self.query);
     }
 
     /// Run a shell command the way the compositor does for `Spawn` bindings.
@@ -137,6 +148,8 @@ impl App {
             return Task::none();
         }
         self.overlay_visible = false;
+        self.query.clear();
+        self.refilter();
         let destroy = destroy_layer_surface(self.overlay_id);
         if self.should_exit() {
             Task::batch([destroy, delayed_exit()])
@@ -355,6 +368,8 @@ impl cosmic::Application for App {
             shortcuts_ctx,
             merged: Shortcuts::default(),
             model: CheatsheetModel::default(),
+            query: String::new(),
+            filtered: CheatsheetModel::default(),
             overlay_id: window::Id::unique(),
             overlay_visible: false,
             settings_window: None,
@@ -413,10 +428,14 @@ impl cosmic::Application for App {
                 Task::none()
             }
             Message::Layer(event, id) => {
-                if id == self.overlay_id && matches!(event, LayerEvent::Unfocused) && self.overlay_visible {
-                    return self.hide();
+                if id != self.overlay_id || !self.overlay_visible {
+                    return Task::none();
                 }
-                Task::none()
+                match event {
+                    LayerEvent::Unfocused => self.hide(),
+                    LayerEvent::Focused => cosmic::widget::text_input::focus(cheatsheet::search_id()),
+                    LayerEvent::Done => Task::none(),
+                }
             }
             Message::ConfigUpdated(config) => {
                 self.config = config;
@@ -432,8 +451,23 @@ impl cosmic::Application for App {
                     .map(shortcuts::system_actions)
                     .unwrap_or_default();
                 self.model = CheatsheetModel::from_shortcuts(&self.merged, &system_actions);
+                self.refilter();
                 Task::none()
             }
+            Message::SearchChanged(query) => {
+                self.query = query;
+                self.refilter();
+                Task::none()
+            }
+            Message::SearchClear => {
+                self.query.clear();
+                self.refilter();
+                cosmic::widget::text_input::focus(cheatsheet::search_id())
+            }
+            Message::SearchSubmit => match self.filtered.first_runnable().and_then(|e| e.command.clone()) {
+                Some(command) if !self.query.trim().is_empty() => self.update(Message::Run(command)),
+                _ => Task::none(),
+            },
             Message::Run(command) => {
                 Self::run_command(&command);
                 self.hide()
@@ -481,7 +515,20 @@ impl cosmic::Application for App {
 
     fn view_window(&self, id: window::Id) -> Element<'_, Message> {
         if id == self.overlay_id {
-            return cheatsheet::overlay(&self.model, Message::Hide, Message::OpenSettings, Message::Noop, Message::Run);
+            return cheatsheet::overlay(
+                &self.filtered,
+                &self.query,
+                !self.model.is_empty(),
+                cheatsheet::Callbacks {
+                    on_close: Message::Hide,
+                    on_settings: Message::OpenSettings,
+                    on_noop: Message::Noop,
+                    on_run: Message::Run,
+                    on_search: Message::SearchChanged,
+                    on_search_clear: Message::SearchClear,
+                    on_search_submit: Message::SearchSubmit,
+                },
+            );
         }
         if Some(id) == self.settings_window {
             let focused = self.core.focused_window().is_some_and(|f| f == id);
@@ -538,6 +585,11 @@ impl cosmic::Application for App {
             return self.stop_recording();
         }
         if self.overlay_visible {
+            if !self.query.is_empty() {
+                self.query.clear();
+                self.refilter();
+                return cosmic::widget::text_input::focus(cheatsheet::search_id());
+            }
             return self.hide();
         }
         Task::none()

@@ -104,6 +104,56 @@ impl CheatsheetModel {
         }
     }
 
+    /// Entries whose label, category, key chips or command contain every
+    /// whitespace-separated term of `query` (case-insensitive). An empty
+    /// query returns everything.
+    pub fn filter(&self, query: &str) -> Self {
+        let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+        if terms.is_empty() {
+            return self.clone();
+        }
+        let categories = self
+            .categories
+            .iter()
+            .filter_map(|category| {
+                let title = category.title.to_lowercase();
+                let entries: Vec<Entry> = category
+                    .entries
+                    .iter()
+                    .filter(|entry| {
+                        let mut haystack = entry.label.to_lowercase();
+                        haystack.push(' ');
+                        haystack.push_str(&title);
+                        for chips in &entry.bindings {
+                            haystack.push(' ');
+                            haystack.push_str(&chips.join("+").to_lowercase());
+                        }
+                        if let Some(command) = &entry.command {
+                            haystack.push(' ');
+                            haystack.push_str(&command.to_lowercase());
+                        }
+                        terms.iter().all(|term| haystack.contains(term.as_str()))
+                    })
+                    .cloned()
+                    .collect();
+                (!entries.is_empty()).then(|| Category {
+                    kind: category.kind,
+                    title: category.title.clone(),
+                    entries,
+                })
+            })
+            .collect();
+        Self { categories }
+    }
+
+    /// The first entry that can be run by clicking, in display order.
+    pub fn first_runnable(&self) -> Option<&Entry> {
+        self.categories
+            .iter()
+            .flat_map(|c| c.entries.iter())
+            .find(|e| e.command.is_some())
+    }
+
     /// Total number of entries across all categories.
     pub fn len(&self) -> usize {
         self.categories.iter().map(|c| c.entries.len()).sum()

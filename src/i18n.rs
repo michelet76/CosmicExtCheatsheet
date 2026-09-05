@@ -15,6 +15,9 @@ pub fn init(requested_languages: &[LanguageIdentifier]) {
     if let Err(why) = localizer().select(requested_languages) {
         eprintln!("error while loading fluent localizations: {why}");
     }
+    // Selecting languages reloads the bundles, which re-enables the Unicode
+    // isolation marks around arguments; we render plain text, so turn them off.
+    LANGUAGE_LOADER.set_use_isolating(false);
 }
 
 /// Initialise localisation from the desktop environment's requested languages.
