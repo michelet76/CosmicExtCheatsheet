@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=Cheatsheet
+Comment=Show the COSMIC keyboard shortcut cheatsheet
+Type=Application
+Exec=cosmic-ext-applet-cheatsheet
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Keyboard;Shortcuts;Cheatsheet;
+Icon=io.github.michelet76.CosmicExtCheatsheet-symbolic
+StartupNotify=true
+NoDisplay=true
+X-CosmicApplet=true
+X-HostWaylandDisplay=true
+X-OverflowPriority=10

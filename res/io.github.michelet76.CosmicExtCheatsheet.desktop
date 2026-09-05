@@ -1,0 +1,16 @@
+[Desktop Entry]
+Name=COSMIC Cheatsheet
+Comment=Keyboard shortcut cheatsheet for the COSMIC desktop
+Type=Application
+Exec=cosmic-ext-cheatsheet
+Terminal=false
+Categories=COSMIC;Utility;
+Keywords=COSMIC;Keyboard;Shortcuts;Cheatsheet;Hotkeys;
+Icon=io.github.michelet76.CosmicExtCheatsheet
+StartupNotify=true
+X-HostWaylandDisplay=true
+Actions=Settings;
+
+[Desktop Action Settings]
+Name=Settings
+Exec=cosmic-ext-cheatsheet settings

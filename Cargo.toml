@@ -1,0 +1,55 @@
+[package]
+name = "cosmic-ext-cheatsheet"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+license = "GPL-3.0-only"
+description = "Keyboard shortcut cheatsheet overlay and panel applet for the COSMIC desktop"
+repository = "https://github.com/michelet76/CosmicCheatSheet"
+
+[lib]
+name = "cosmic_ext_cheatsheet"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cosmic-ext-cheatsheet"
+path = "src/bin/cheatsheet/main.rs"
+
+[[bin]]
+name = "cosmic-ext-applet-cheatsheet"
+path = "src/bin/applet/main.rs"
+
+[features]
+default = ["wgpu"]
+wgpu = ["libcosmic/wgpu"]
+
+[dependencies]
+i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
+i18n-embed-fl = "0.10"
+rust-embed = "8"
+serde = { version = "1", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["time"] }
+tracing = "0.1"
+xkbcommon = "0.9"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic"
+default-features = false
+features = [
+    "applet",
+    "dbus-config",
+    "single-instance",
+    "winit",
+    "wayland",
+    "multi-window",
+    "tokio",
+]
+
+[dependencies.cosmic-settings-config]
+git = "https://github.com/pop-os/cosmic-settings-daemon"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
