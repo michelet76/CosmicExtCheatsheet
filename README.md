@@ -70,6 +70,13 @@ cosmic-ext-cheatsheet [toggle|show|hide|settings|register|unregister]
   runs; a second invocation talks to the first over D-Bus.
 * `settings` — open the settings window.
 * `register` / `unregister` — write or remove the shortcut entry without opening a window.
+  `register` refuses to replace a combination that is bound to something else unless you pass
+  `--force`. `unregister` also turns off automatic registration, so the next launch will not
+  re-add the shortcut; `register` (or choosing a combination in Settings) turns it back on.
+
+The app only ever touches its own entry in the custom shortcuts file, re-reads the file right
+before each write, and refuses to write at all if the file contains an entry this version cannot
+decode (which can happen when the compositor is newer than the app).
 
 ## Configuration
 

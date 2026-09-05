@@ -13,8 +13,9 @@ use cli::{Args, Cmd};
 fn main() -> cosmic::iced::Result {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn,cosmic_ext_cheatsheet=info")),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new("warn,cosmic_ext_cheatsheet=info")
+            }),
         )
         .with_writer(std::io::stderr)
         .init();
@@ -24,17 +25,27 @@ fn main() -> cosmic::iced::Result {
     let args = Args::parse();
 
     match args.cmd {
-        Some(Cmd::Register) => {
+        Some(Cmd::Register { force }) => {
             headless(|ctx| {
                 let (mut config, app_ctx) = CheatsheetConfig::load();
-                registration::register(ctx, config.registered.as_ref(), &config.binding)?;
-                config.registered = Some(config.binding.clone());
-                if let Some(app_ctx) = app_ctx {
-                    config.save(&app_ctx);
+                let binding = config.binding.clone();
+                if let Err(registration::Error::Conflict(action)) =
+                    registration::register_checked(ctx, config.registered.as_ref(), &binding, force)
+                {
+                    let label =
+                        cosmic_ext_cheatsheet::shortcuts::localize::action_label(&action, None);
+                    eprintln!(
+                        "{} is already bound to \"{label}\"; use --force to replace it",
+                        cosmic_ext_cheatsheet::shortcuts::keys::display(&binding)
+                    );
+                    std::process::exit(2);
                 }
+                config.registered = Some(binding.clone());
+                config.auto_register = true;
+                save_app_config(&config, app_ctx.as_ref())?;
                 println!(
                     "registered {} -> {}",
-                    cosmic_ext_cheatsheet::shortcuts::keys::display(&config.binding),
+                    cosmic_ext_cheatsheet::shortcuts::keys::display(&binding),
                     registration::spawn_command()
                 );
                 Ok(())
@@ -43,12 +54,12 @@ fn main() -> cosmic::iced::Result {
         }
         Some(Cmd::Unregister) => {
             headless(|ctx| {
-                registration::unregister(ctx)?;
                 let (mut config, app_ctx) = CheatsheetConfig::load();
-                if let Some(app_ctx) = app_ctx {
-                    config.registered = None;
-                    config.save(&app_ctx);
-                }
+                registration::unregister(ctx, config.registered.as_ref())?;
+                config.registered = None;
+                // An explicit removal must not be undone by the next launch.
+                config.auto_register = false;
+                save_app_config(&config, app_ctx.as_ref())?;
                 println!("unregistered");
                 Ok(())
             });
@@ -73,7 +84,7 @@ fn main() -> cosmic::iced::Result {
     }
 }
 
-fn headless(f: impl FnOnce(&cosmic::cosmic_config::Config) -> Result<(), cosmic::cosmic_config::Error>) {
+fn headless(f: impl FnOnce(&cosmic::cosmic_config::Config) -> Result<(), registration::Error>) {
     match registration::context() {
         Ok(ctx) => {
             if let Err(why) = f(&ctx) {
@@ -85,5 +96,17 @@ fn headless(f: impl FnOnce(&cosmic::cosmic_config::Config) -> Result<(), cosmic:
             eprintln!("error: could not open shortcuts config: {why}");
             std::process::exit(1);
         }
+    }
+}
+
+fn save_app_config(
+    config: &CheatsheetConfig,
+    ctx: Option<&cosmic::cosmic_config::Config>,
+) -> Result<(), registration::Error> {
+    match ctx {
+        Some(ctx) => config.save(ctx).map_err(registration::Error::Config),
+        None => Err(registration::Error::Config(
+            cosmic::cosmic_config::Error::NoConfigDirectory,
+        )),
     }
 }

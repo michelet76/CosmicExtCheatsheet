@@ -5,7 +5,11 @@ fn main() {
     let query: String = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
     let search = model.search(&query);
     for matched in &search.categories {
-        println!("\n== {} ({})", matched.category.title, matched.entries.len());
+        println!(
+            "\n== {} ({})",
+            matched.category.title,
+            matched.entries.len()
+        );
         for entry in &matched.entries {
             let combos: Vec<String> = entry.bindings.iter().map(|b| b.join("+")).collect();
             println!("  {:<45} {}", entry.label, combos.join("   |   "));
@@ -13,7 +17,14 @@ fn main() {
     }
     println!("\ntotal entries: {}", model.len());
     if let Some(target) = search.enter_target() {
-        println!("enter runs: {} -> {}", target.label, target.command.as_deref().unwrap_or_default());
+        println!(
+            "enter runs: {} -> {}",
+            target.label,
+            target.command.as_deref().unwrap_or_default()
+        );
     }
-    println!("spawn command: {}", cosmic_ext_cheatsheet::registration::spawn_command());
+    println!(
+        "spawn command: {}",
+        cosmic_ext_cheatsheet::registration::spawn_command()
+    );
 }

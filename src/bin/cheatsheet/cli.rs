@@ -7,7 +7,11 @@ use clap::{Parser, Subcommand};
 use cosmic::app::CosmicFlags;
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "cosmic-ext-cheatsheet", version, about = "Keyboard shortcut cheatsheet for COSMIC")]
+#[command(
+    name = "cosmic-ext-cheatsheet",
+    version,
+    about = "Keyboard shortcut cheatsheet for COSMIC"
+)]
 pub struct Args {
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
@@ -24,7 +28,11 @@ pub enum Cmd {
     /// Open the settings window
     Settings,
     /// Write the configured shortcut into the compositor config and exit
-    Register,
+    Register {
+        /// Replace whatever is currently bound to the combination
+        #[arg(long)]
+        force: bool,
+    },
     /// Remove the shortcut from the compositor config and exit
     Unregister,
 }
@@ -36,7 +44,7 @@ impl Cmd {
             Cmd::Show => "show",
             Cmd::Hide => "hide",
             Cmd::Settings => "settings",
-            Cmd::Register => "register",
+            Cmd::Register { .. } => "register",
             Cmd::Unregister => "unregister",
         }
     }
@@ -57,7 +65,7 @@ impl FromStr for Cmd {
             "show" => Cmd::Show,
             "hide" => Cmd::Hide,
             "settings" => Cmd::Settings,
-            "register" => Cmd::Register,
+            "register" => Cmd::Register { force: false },
             "unregister" => Cmd::Unregister,
             _ => return Err(()),
         })

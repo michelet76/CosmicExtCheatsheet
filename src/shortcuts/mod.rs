@@ -81,7 +81,10 @@ impl CheatsheetModel {
     /// Load from the compositor config (defaults + custom).
     pub fn load() -> Self {
         match shortcuts::context() {
-            Ok(ctx) => Self::from_shortcuts(&shortcuts::shortcuts(&ctx), &shortcuts::system_actions(&ctx)),
+            Ok(ctx) => Self::from_shortcuts(
+                &shortcuts::shortcuts(&ctx),
+                &shortcuts::system_actions(&ctx),
+            ),
             Err(why) => {
                 tracing::error!("could not open shortcuts config: {why}");
                 Self::default()
@@ -95,7 +98,9 @@ impl CheatsheetModel {
         // Group every binding by its action. `Action: Ord`, and the enum's
         // declaration order keeps related actions (Focus(..), Workspace(n),
         // System(..)) next to each other.
-        let mut by_action: BTreeMap<&Action, Vec<&Binding>> = BTreeMap::new();
+        // Custom `Spawn` bindings additionally group by their description, so
+        // two differently named shortcuts to the same script stay separate.
+        let mut by_action: BTreeMap<(&Action, Option<&str>), Vec<&Binding>> = BTreeMap::new();
         for (binding, action) in shortcuts.iter() {
             if matches!(action, Action::Disable | Action::Debug) {
                 continue;
@@ -104,11 +109,18 @@ impl CheatsheetModel {
             if binding.key.is_none() && !binding.is_super() {
                 continue;
             }
-            by_action.entry(action).or_default().push(binding);
+            let description = match action {
+                Action::Spawn(_) => binding.description.as_deref(),
+                _ => None,
+            };
+            by_action
+                .entry((action, description))
+                .or_default()
+                .push(binding);
         }
 
         let mut categories: BTreeMap<CategoryKind, Vec<Entry>> = BTreeMap::new();
-        for (action, mut bindings) in by_action {
+        for ((action, _), mut bindings) in by_action {
             bindings.sort_by_key(|b| keys::sort_key(b));
             let command = match action {
                 Action::System(system) => system_actions.get(system).cloned(),
@@ -137,7 +149,11 @@ impl CheatsheetModel {
                     for entry in &mut entries {
                         entry.search_text = search_text(entry, &title);
                     }
-                    Category { kind, title, entries }
+                    Category {
+                        kind,
+                        title,
+                        entries,
+                    }
                 })
                 .collect(),
         }
@@ -155,7 +171,11 @@ impl CheatsheetModel {
                 let entries: Vec<&Entry> = category
                     .entries
                     .iter()
-                    .filter(|entry| terms.iter().all(|term| entry.search_text.contains(term.as_str())))
+                    .filter(|entry| {
+                        terms
+                            .iter()
+                            .all(|term| entry.search_text.contains(term.as_str()))
+                    })
                     .collect();
                 (!entries.is_empty()).then_some(MatchedCategory { category, entries })
             })

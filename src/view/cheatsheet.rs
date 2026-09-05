@@ -67,7 +67,11 @@ pub fn overlay<'a>(model: &'a CheatsheetModel, query: &'a str) -> Element<'a, Me
         );
 
     let body: Element<'a, Message> = if search.is_empty() {
-        let message = if search.active { fl!("overlay-no-match") } else { fl!("overlay-empty") };
+        let message = if search.active {
+            fl!("overlay-no-match")
+        } else {
+            fl!("overlay-empty")
+        };
         container(text::body(message)).center(Length::Fill).into()
     } else {
         let matched = search.categories;
@@ -81,9 +85,13 @@ pub fn overlay<'a>(model: &'a CheatsheetModel, query: &'a str) -> Element<'a, Me
                 heights[shortest] += category.entries.len() + 2;
                 cols[shortest].push(category);
             }
-            let mut layout = Row::new().spacing(spacing.space_m).align_y(Alignment::Start);
+            let mut layout = Row::new()
+                .spacing(spacing.space_m)
+                .align_y(Alignment::Start);
             for col in cols {
-                let mut column = Column::new().spacing(spacing.space_m).width(Length::FillPortion(1));
+                let mut column = Column::new()
+                    .spacing(spacing.space_m)
+                    .width(Length::FillPortion(1));
                 for category in col {
                     column = column.push(category_card(category, enter_target));
                 }
@@ -96,28 +104,33 @@ pub fn overlay<'a>(model: &'a CheatsheetModel, query: &'a str) -> Element<'a, Me
         .into()
     };
 
-    let card = container(Column::new().spacing(spacing.space_m).push(header).push(body))
-        .padding(spacing.space_l)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .max_width(1800.0)
-        .class(theme::Container::custom(|theme| {
-            let cosmic = theme.cosmic();
-            let mut bg = Color::from(cosmic.bg_color());
-            bg.a = 0.98;
-            container::Style {
-                background: Some(bg.into()),
-                border: Border {
-                    radius: cosmic.radius_l().into(),
-                    width: 1.0,
-                    color: Color::from(cosmic.bg_divider()),
-                },
-                shadow: Shadow::default(),
-                text_color: Some(Color::from(cosmic.on_bg_color())),
-                icon_color: Some(Color::from(cosmic.on_bg_color())),
-                snap: false,
-            }
-        }));
+    let card = container(
+        Column::new()
+            .spacing(spacing.space_m)
+            .push(header)
+            .push(body),
+    )
+    .padding(spacing.space_l)
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .max_width(1800.0)
+    .class(theme::Container::custom(|theme| {
+        let cosmic = theme.cosmic();
+        let mut bg = Color::from(cosmic.bg_color());
+        bg.a = 0.98;
+        container::Style {
+            background: Some(bg.into()),
+            border: Border {
+                radius: cosmic.radius_l().into(),
+                width: 1.0,
+                color: Color::from(cosmic.bg_divider()),
+            },
+            shadow: Shadow::default(),
+            text_color: Some(Color::from(cosmic.on_bg_color())),
+            icon_color: Some(Color::from(cosmic.on_bg_color())),
+            snap: false,
+        }
+    }));
 
     // The card swallows clicks; clicks on the backdrop close the overlay.
     let card = mouse_area(card).on_press(Message::Noop);
@@ -126,14 +139,23 @@ pub fn overlay<'a>(model: &'a CheatsheetModel, query: &'a str) -> Element<'a, Me
         .padding(spacing.space_xl)
         .center(Length::Fill)
         .class(theme::Container::custom(|_| container::Style {
-            background: Some(Color { a: 0.45, ..Color::BLACK }.into()),
+            background: Some(
+                Color {
+                    a: 0.45,
+                    ..Color::BLACK
+                }
+                .into(),
+            ),
             ..Default::default()
         }));
 
     mouse_area(backdrop).on_press(Message::Close).into()
 }
 
-fn category_card<'a>(matched: &MatchedCategory<'a>, enter_target: Option<*const Entry>) -> Element<'a, Message> {
+fn category_card<'a>(
+    matched: &MatchedCategory<'a>,
+    enter_target: Option<*const Entry>,
+) -> Element<'a, Message> {
     let spacing = theme::spacing();
     let muted = muted_color();
     let mut list = Column::new().spacing(spacing.space_xxxs);
@@ -141,7 +163,9 @@ fn category_card<'a>(matched: &MatchedCategory<'a>, enter_target: Option<*const 
     for entry in &matched.entries {
         let entry: &'a Entry = entry;
         let runnable = entry.command.is_some();
-        let mut combos = Column::new().spacing(spacing.space_xxxs).align_x(Alignment::End);
+        let mut combos = Column::new()
+            .spacing(spacing.space_xxxs)
+            .align_x(Alignment::End);
         for chips in &entry.bindings {
             combos = combos.push(chip_row(chips, runnable));
         }
@@ -160,7 +184,11 @@ fn category_card<'a>(matched: &MatchedCategory<'a>, enter_target: Option<*const 
             Some(command) => {
                 let is_target = enter_target == Some(std::ptr::from_ref(entry));
                 button::custom(line)
-                    .class(if is_target { theme::Button::Suggested } else { theme::Button::Text })
+                    .class(if is_target {
+                        theme::Button::Suggested
+                    } else {
+                        theme::Button::Text
+                    })
                     .width(Length::Fill)
                     .padding(padding)
                     .on_press(Message::Run(command.clone()))
@@ -186,7 +214,9 @@ fn muted_color() -> Color {
 
 fn chip_row<'a>(chips: &'a [String], enabled: bool) -> Element<'a, Message> {
     let spacing = theme::spacing();
-    let mut r = Row::new().spacing(spacing.space_xxxs).align_y(Alignment::Center);
+    let mut r = Row::new()
+        .spacing(spacing.space_xxxs)
+        .align_y(Alignment::Center);
     let last = chips.len().saturating_sub(1);
     for (i, chip) in chips.iter().enumerate() {
         r = r.push(chip_widget(chip, enabled));
@@ -208,13 +238,17 @@ fn chip_widget<'a>(label: &'a str, enabled: bool) -> Element<'a, Message> {
                 c
             };
             container::Style {
-                background: Some(with_alpha(Color::from(cosmic.secondary_component_color())).into()),
+                background: Some(
+                    with_alpha(Color::from(cosmic.secondary_component_color())).into(),
+                ),
                 border: Border {
                     radius: cosmic.radius_s().into(),
                     width: 1.0,
                     color: with_alpha(Color::from(cosmic.secondary_container_divider())),
                 },
-                text_color: Some(with_alpha(Color::from(cosmic.on_secondary_component_color()))),
+                text_color: Some(with_alpha(Color::from(
+                    cosmic.on_secondary_component_color(),
+                ))),
                 ..Default::default()
             }
         }))

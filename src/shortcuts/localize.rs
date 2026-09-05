@@ -62,13 +62,19 @@ pub fn action_label(action: &Action, binding: Option<&Binding>) -> String {
             fl!("action-migrate-workspace-output", direction = direction(*d))
         }
         Action::Move(d) => fl!("action-move", direction = direction(*d)),
-        Action::MoveToLastWorkspace | Action::SendToLastWorkspace => fl!("action-move-last-workspace"),
-        Action::MoveToNextWorkspace | Action::SendToNextWorkspace => fl!("action-move-next-workspace"),
+        Action::MoveToLastWorkspace | Action::SendToLastWorkspace => {
+            fl!("action-move-last-workspace")
+        }
+        Action::MoveToNextWorkspace | Action::SendToNextWorkspace => {
+            fl!("action-move-next-workspace")
+        }
         Action::MoveToPreviousWorkspace | Action::SendToPreviousWorkspace => {
             fl!("action-move-prev-workspace")
         }
         Action::MoveToNextOutput | Action::SendToNextOutput => fl!("action-move-next-output"),
-        Action::MoveToPreviousOutput | Action::SendToPreviousOutput => fl!("action-move-prev-output"),
+        Action::MoveToPreviousOutput | Action::SendToPreviousOutput => {
+            fl!("action-move-prev-output")
+        }
         Action::MoveToOutput(d) | Action::SendToOutput(d) => {
             fl!("action-move-output", direction = direction(*d))
         }

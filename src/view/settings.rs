@@ -2,11 +2,11 @@
 
 //! Settings page: choose the global key combination.
 
+use cosmic::Element;
+use cosmic::iced::widget::{Column, Row};
 use cosmic::iced::{Alignment, Length};
 use cosmic::theme;
-use cosmic::iced::widget::{Column, Row};
 use cosmic::widget::{button, container, settings, text, text_input, toggler, warning};
-use cosmic::Element;
 use cosmic_settings_config::shortcuts::Binding;
 
 use crate::config::CheatsheetConfig;
@@ -45,7 +45,11 @@ pub enum Status {
     Error(String),
 }
 
-pub fn page<'a>(state: &'a State, config: &'a CheatsheetConfig, registered: bool) -> Element<'a, Message> {
+pub fn page<'a>(
+    state: &'a State,
+    config: &'a CheatsheetConfig,
+    registered: bool,
+) -> Element<'a, Message> {
     let spacing = theme::spacing();
 
     let current = if registered {
@@ -102,7 +106,10 @@ pub fn page<'a>(state: &'a State, config: &'a CheatsheetConfig, registered: bool
             .spacing(spacing.space_xs)
             .align_y(Alignment::Center)
             .push(record_button)
-            .push(button::destructive(fl!("settings-remove")).on_press_maybe(registered.then_some(Message::Remove))),
+            .push(
+                button::destructive(fl!("settings-remove"))
+                    .on_press_maybe(registered.then_some(Message::Remove)),
+            ),
     ));
     if let Some(hint) = recording_hint {
         shortcut_section = shortcut_section.add(hint);
@@ -116,10 +123,16 @@ pub fn page<'a>(state: &'a State, config: &'a CheatsheetConfig, registered: bool
                 .control(toggler(config.resident).on_toggle(Message::ToggleResident)),
         );
 
-    let mut page = Column::new().spacing(spacing.space_l).push(shortcut_section);
+    let mut page = Column::new()
+        .spacing(spacing.space_l)
+        .push(shortcut_section);
 
     if let Some((binding, action)) = &state.replace {
-        let body = fl!("replace-body", binding = keys::display(binding), action = action.clone());
+        let body = fl!(
+            "replace-body",
+            binding = keys::display(binding),
+            action = action.clone()
+        );
         page = page.push(
             container(
                 Column::new()
@@ -129,8 +142,14 @@ pub fn page<'a>(state: &'a State, config: &'a CheatsheetConfig, registered: bool
                     .push(
                         Row::new()
                             .spacing(spacing.space_xs)
-                            .push(button::suggested(fl!("replace-confirm")).on_press(Message::ReplaceConfirm))
-                            .push(button::standard(fl!("replace-cancel")).on_press(Message::ReplaceCancel)),
+                            .push(
+                                button::suggested(fl!("replace-confirm"))
+                                    .on_press(Message::ReplaceConfirm),
+                            )
+                            .push(
+                                button::standard(fl!("replace-cancel"))
+                                    .on_press(Message::ReplaceCancel),
+                            ),
                     ),
             )
             .padding(spacing.space_m)

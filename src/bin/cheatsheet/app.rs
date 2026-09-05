@@ -10,7 +10,9 @@ use cosmic::dbus_activation::Details;
 use cosmic::iced::event::{listen_raw, listen_with};
 use cosmic::iced::keyboard::key::Named;
 use cosmic::iced::keyboard::{self, Key, Location, Modifiers};
-use cosmic::iced::platform_specific::runtime::wayland::layer_surface::{IcedMargin, IcedOutput, SctkLayerSurfaceSettings};
+use cosmic::iced::platform_specific::runtime::wayland::layer_surface::{
+    IcedMargin, IcedOutput, SctkLayerSurfaceSettings,
+};
 use cosmic::iced::platform_specific::shell::commands::layer_surface::{
     Anchor, KeyboardInteractivity, Layer, destroy_layer_surface, get_layer_surface,
 };
@@ -24,8 +26,8 @@ use cosmic::{Element, theme};
 use cosmic_ext_cheatsheet::config::CheatsheetConfig;
 use cosmic_ext_cheatsheet::ids::APP_ID;
 use cosmic_ext_cheatsheet::shortcuts::{CheatsheetModel, keys};
-use cosmic_ext_cheatsheet::view::settings::{self, Status};
 use cosmic_ext_cheatsheet::view::cheatsheet;
+use cosmic_ext_cheatsheet::view::settings::{self, Status};
 use cosmic_ext_cheatsheet::{fl, keycapture, registration};
 use cosmic_settings_config::shortcuts::{self, Binding, Shortcuts};
 
@@ -48,7 +50,8 @@ pub enum Message {
     WindowClosed(window::Id),
     Layer(LayerEvent, window::Id),
     ConfigUpdated(CheatsheetConfig),
-    ShortcutsUpdated(shortcuts::Config),
+    /// The compositor shortcuts config changed on disk.
+    ShortcutsUpdated,
     Settings(settings::Message),
     Cheatsheet(cheatsheet::Message),
     /// Escape pressed while the overlay has focus (routed through the raw
@@ -111,10 +114,21 @@ impl App {
     /// Run a shell command the way the compositor does for `Spawn` bindings.
     fn run_command(command: &str) {
         tracing::info!("running: {command}");
-        match std::process::Command::new("/bin/sh").arg("-c").arg(command).spawn() {
+        // The activation token in our environment was issued for this process;
+        // a stale one is worse than none for the child.
+        let spawned = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(command)
+            .env_remove("XDG_ACTIVATION_TOKEN")
+            .env_remove("DESKTOP_STARTUP_ID")
+            .spawn();
+        match spawned {
             Ok(mut child) => {
-                std::thread::spawn(move || {
-                    let _ = child.wait();
+                let command = command.to_owned();
+                std::thread::spawn(move || match child.wait() {
+                    Ok(status) if status.success() => {}
+                    Ok(status) => tracing::warn!("{command:?} exited with {status}"),
+                    Err(why) => tracing::warn!("could not wait for {command:?}: {why}"),
                 });
             }
             Err(why) => tracing::error!("could not run {command:?}: {why}"),
@@ -123,10 +137,26 @@ impl App {
 
     fn is_registered(&self) -> bool {
         self.config.registered.is_some()
-            && self
-                .shortcuts_ctx
-                .as_ref()
-                .is_some_and(|ctx| registration::is_registered(ctx, &self.config.binding))
+            && self.shortcuts_ctx.as_ref().is_some_and(|ctx| {
+                registration::is_registered(ctx, &self.config.binding).unwrap_or(false)
+            })
+    }
+
+    /// Persist the app config, reporting failure in the settings page.
+    fn save_config(&mut self) {
+        let Some(app_ctx) = &self.config_ctx else {
+            self.settings.status = Some(Status::Error(fl!(
+                "settings-write-error",
+                error = "app config directory unavailable".to_owned()
+            )));
+            return;
+        };
+        if let Err(why) = self.config.save(app_ctx) {
+            self.settings.status = Some(Status::Error(fl!(
+                "settings-write-error",
+                error = why.to_string()
+            )));
+        }
     }
 
     fn show(&mut self) -> Task<Message> {
@@ -208,12 +238,11 @@ impl App {
     /// Validate, check for conflicts (unless `replace`), then register.
     fn apply_binding(&mut self, binding: Binding, replace: bool) {
         if let Err(why) = keycapture::validate(&binding) {
-            self.settings.status = Some(Status::Error(fl!("settings-invalid-binding", error = why)));
+            self.settings.status =
+                Some(Status::Error(fl!("settings-invalid-binding", error = why)));
             return;
         }
-        if !replace
-            && let Some(action) = registration::conflict(&self.merged, &binding)
-        {
+        if !replace && let Some(action) = registration::conflict(&self.merged, &binding) {
             let label = cosmic_ext_cheatsheet::shortcuts::localize::action_label(
                 &action,
                 self.merged.0.get_key_value(&binding).map(|(b, _)| b),
@@ -233,32 +262,42 @@ impl App {
             Ok(()) => {
                 self.config.binding = binding.clone();
                 self.config.registered = Some(binding.clone());
-                if let Some(app_ctx) = &self.config_ctx {
-                    self.config.save(app_ctx);
-                }
+                self.config.auto_register = true;
                 self.settings.text.clear();
-                self.settings.status = Some(Status::Ok(fl!("settings-registered-ok", binding = keys::display(&binding))));
+                self.settings.status = Some(Status::Ok(fl!(
+                    "settings-registered-ok",
+                    binding = keys::display(&binding)
+                )));
+                self.save_config();
                 self.reload_shortcuts();
             }
             Err(why) => {
-                self.settings.status = Some(Status::Error(fl!("settings-write-error", error = why.to_string())));
+                self.settings.status = Some(Status::Error(fl!(
+                    "settings-write-error",
+                    error = why.to_string()
+                )));
             }
         }
     }
 
     fn remove_binding(&mut self) {
-        let Some(ctx) = &self.shortcuts_ctx else { return };
-        match registration::unregister(ctx) {
+        let Some(ctx) = &self.shortcuts_ctx else {
+            return;
+        };
+        match registration::unregister(ctx, self.config.registered.as_ref()) {
             Ok(()) => {
                 self.config.registered = None;
-                if let Some(app_ctx) = &self.config_ctx {
-                    self.config.save(app_ctx);
-                }
+                // An explicit removal must not be undone by the next launch.
+                self.config.auto_register = false;
                 self.settings.status = None;
+                self.save_config();
                 self.reload_shortcuts();
             }
             Err(why) => {
-                self.settings.status = Some(Status::Error(fl!("settings-write-error", error = why.to_string())));
+                self.settings.status = Some(Status::Error(fl!(
+                    "settings-write-error",
+                    error = why.to_string()
+                )));
             }
         }
     }
@@ -277,7 +316,8 @@ impl App {
                 match Binding::from_str(&text) {
                     Ok(binding) => self.apply_binding(binding, false),
                     Err(why) => {
-                        self.settings.status = Some(Status::Error(fl!("settings-invalid-binding", error = why)));
+                        self.settings.status =
+                            Some(Status::Error(fl!("settings-invalid-binding", error = why)));
                     }
                 }
             }
@@ -290,9 +330,7 @@ impl App {
             M::Remove => self.remove_binding(),
             M::ToggleResident(value) => {
                 self.config.resident = value;
-                if let Some(app_ctx) = &self.config_ctx {
-                    self.config.save(app_ctx);
-                }
+                self.save_config();
             }
         }
         Task::none()
@@ -316,7 +354,11 @@ impl App {
             }
             M::SearchClear => self.clear_search(),
             M::SearchSubmit => {
-                let command = self.model.search(&self.query).enter_target().and_then(|e| e.command.clone());
+                let command = self
+                    .model
+                    .search(&self.query)
+                    .enter_target()
+                    .and_then(|e| e.command.clone());
                 match command {
                     Some(command) => self.update_cheatsheet(M::Run(command)),
                     None => Task::none(),
@@ -366,31 +408,51 @@ impl cosmic::Application for App {
         };
 
         if let Some(ctx) = &shortcuts_ctx {
+            let mut changed = false;
             if config.auto_register && config.registered.is_none() {
                 // First run: make the default shortcut work without visiting settings.
                 let binding = config.binding.clone();
-                let conflict = registration::conflict(&shortcuts::shortcuts(ctx), &binding);
-                if conflict.is_none() {
-                    match registration::register(ctx, None, &binding) {
-                        Ok(()) => {
-                            config.registered = Some(binding);
-                            if let Some(app_ctx) = &config_ctx {
-                                config.save(app_ctx);
-                            }
-                            tracing::info!("registered default shortcut {}", keys::display(&config.binding));
-                        }
-                        Err(why) => tracing::error!("could not register default shortcut: {why}"),
+                match registration::register_checked(ctx, None, &binding, false) {
+                    Ok(()) => {
+                        config.registered = Some(binding);
+                        changed = true;
+                        tracing::info!(
+                            "registered default shortcut {}",
+                            keys::display(&config.binding)
+                        );
                     }
-                } else {
-                    tracing::warn!("default shortcut already in use; open settings to pick one");
+                    Err(registration::Error::Conflict(_)) => {
+                        tracing::warn!(
+                            "default shortcut already in use; open settings to pick one"
+                        );
+                    }
+                    Err(why) => tracing::error!("could not register default shortcut: {why}"),
                 }
             } else if config.registered.is_some() {
-                // Keep the spawn command pointing at the best-installed binary.
+                // Keep the spawn command pointing at the best-installed binary,
+                // and notice when the user removed or reassigned the combination.
                 match registration::sync_command(ctx, &config.binding) {
-                    Ok(true) => tracing::info!("updated shortcut command to {}", registration::spawn_command()),
-                    Ok(false) => {}
-                    Err(why) => tracing::error!("could not update shortcut command: {why}"),
+                    Ok(registration::Sync::Updated) => {
+                        tracing::info!(
+                            "updated shortcut command to {}",
+                            registration::spawn_command()
+                        );
+                    }
+                    Ok(registration::Sync::Unchanged) => {}
+                    Ok(outcome @ (registration::Sync::Missing | registration::Sync::Foreign)) => {
+                        tracing::warn!(
+                            "shortcut {} is {outcome:?}; treating as unregistered",
+                            keys::display(&config.binding)
+                        );
+                        config.registered = None;
+                        config.auto_register = false;
+                        changed = true;
+                    }
+                    Err(why) => tracing::error!("could not check shortcut registration: {why}"),
                 }
+            }
+            if changed && let Some(app_ctx) = &config_ctx {
+                let _ = config.save(app_ctx);
             }
         }
 
@@ -441,7 +503,11 @@ impl cosmic::Application for App {
             Message::WindowClosed(id) => {
                 if self.settings_window == Some(id) {
                     self.settings_window = None;
-                    let stop = if self.settings.recording { self.stop_recording() } else { Task::none() };
+                    let stop = if self.settings.recording {
+                        self.stop_recording()
+                    } else {
+                        Task::none()
+                    };
                     if self.should_exit() {
                         return Task::batch([stop, delayed_exit()]);
                     }
@@ -462,7 +528,9 @@ impl cosmic::Application for App {
                 }
                 match event {
                     LayerEvent::Unfocused => self.hide(),
-                    LayerEvent::Focused => cosmic::widget::text_input::focus(cheatsheet::search_id()),
+                    LayerEvent::Focused => {
+                        cosmic::widget::text_input::focus(cheatsheet::search_id())
+                    }
                     _ => Task::none(),
                 }
             }
@@ -470,11 +538,9 @@ impl cosmic::Application for App {
                 self.config = config;
                 Task::none()
             }
-            Message::ShortcutsUpdated(config) => {
-                let mut merged = config.defaults;
-                merged.0.extend(config.custom.0);
-                self.merged = merged;
-                self.rebuild_model();
+            Message::ShortcutsUpdated => {
+                // Re-read through the same merge as at startup.
+                self.reload_shortcuts();
                 Task::none()
             }
             Message::Cheatsheet(message) => self.update_cheatsheet(message),
@@ -521,7 +587,14 @@ impl cosmic::Application for App {
                     None => Task::none(),
                 }
             }
-            Message::Exit => iced::exit(),
+            Message::Exit => {
+                // A show() or settings window may have arrived during the delay.
+                if self.should_exit() {
+                    iced::exit()
+                } else {
+                    Task::none()
+                }
+            }
             Message::Noop => Task::none(),
         }
     }
@@ -562,11 +635,11 @@ impl cosmic::Application for App {
                 .map(|update| Message::ConfigUpdated(update.config)),
             self.core
                 .watch_config::<shortcuts::Config>(shortcuts::ID)
-                .map(|update| Message::ShortcutsUpdated(update.config)),
+                .map(|_| Message::ShortcutsUpdated),
             listen_raw(|event, _status, id| match event {
-                iced::Event::PlatformSpecific(PlatformSpecific::Wayland(wayland::Event::Layer(event, _, layer_id))) => {
-                    Some(Message::Layer(event, layer_id))
-                }
+                iced::Event::PlatformSpecific(PlatformSpecific::Wayland(
+                    wayland::Event::Layer(event, _, layer_id),
+                )) => Some(Message::Layer(event, layer_id)),
                 iced::Event::Window(window::Event::Closed) => Some(Message::WindowClosed(id)),
                 iced::Event::Keyboard(keyboard::Event::KeyPressed {
                     key: Key::Named(Named::Escape),
@@ -578,9 +651,12 @@ impl cosmic::Application for App {
         ];
         if self.settings.recording {
             subs.push(listen_with(|event, _status, id| match event {
-                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, location, modifiers, .. }) => {
-                    Some(Message::KeyPressed(id, key, location, modifiers))
-                }
+                iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key,
+                    location,
+                    modifiers,
+                    ..
+                }) => Some(Message::KeyPressed(id, key, location, modifiers)),
                 iced::Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
                     Some(Message::ModifiersChanged(modifiers))
                 }
@@ -634,8 +710,8 @@ impl cosmic::Application for App {
             Cmd::Toggle => self.update(Message::Toggle),
             Cmd::Show => self.update(Message::Show),
             Cmd::Hide => self.update(Message::Hide),
-            Cmd::Settings => self.open_settings(),
-            Cmd::Register | Cmd::Unregister => Task::none(),
+            Cmd::Settings => self.update_cheatsheet(cheatsheet::Message::OpenSettings),
+            Cmd::Register { .. } | Cmd::Unregister => Task::none(),
         }
     }
 }

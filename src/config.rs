@@ -4,7 +4,9 @@
 
 use std::str::FromStr;
 
-use cosmic::cosmic_config::{self, Config, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry};
+use cosmic::cosmic_config::{
+    self, Config, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry,
+};
 use cosmic_settings_config::shortcuts::Binding;
 
 use crate::ids::{APP_ID, SHORTCUT_DESCRIPTION};
@@ -76,9 +78,9 @@ impl CheatsheetConfig {
     }
 
     /// Persist the whole configuration.
-    pub fn save(&self, context: &Config) {
-        if let Err(why) = self.write_entry(context) {
+    pub fn save(&self, context: &Config) -> Result<(), cosmic_config::Error> {
+        self.write_entry(context).inspect_err(|why| {
             tracing::error!("could not write cheatsheet config: {why}");
-        }
+        })
     }
 }

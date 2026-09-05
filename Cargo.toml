@@ -28,6 +28,7 @@ i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester
 i18n-embed-fl = "0.10"
 rust-embed = "8"
 serde = { version = "1", features = ["derive"] }
+ron = "0.12"
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"

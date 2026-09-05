@@ -4,9 +4,9 @@
 
 use std::process::Command;
 
+use cosmic::Element;
 use cosmic::app::{Core, Task};
 use cosmic::iced::window;
-use cosmic::Element;
 use cosmic_ext_cheatsheet::ids::{APPLET_ID, BIN_NAME, ICON_SYMBOLIC};
 use cosmic_ext_cheatsheet::{fl, i18n};
 
@@ -57,12 +57,18 @@ impl cosmic::Application for Applet {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let button = self.core.applet.icon_button(ICON_SYMBOLIC).on_press(Message::Launch);
-        Element::from(
-            self.core
-                .applet
-                .applet_tooltip::<Message>(button, fl!("applet-tooltip"), false, Message::Surface, None),
-        )
+        let button = self
+            .core
+            .applet
+            .icon_button(ICON_SYMBOLIC)
+            .on_press(Message::Launch);
+        Element::from(self.core.applet.applet_tooltip::<Message>(
+            button,
+            fl!("applet-tooltip"),
+            false,
+            Message::Surface,
+            None,
+        ))
     }
 
     fn view_window(&self, _id: window::Id) -> Element<'_, Message> {
