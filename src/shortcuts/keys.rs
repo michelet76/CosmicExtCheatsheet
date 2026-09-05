@@ -55,16 +55,16 @@ pub fn sort_key(binding: &Binding) -> (u8, usize, String) {
 pub fn key_label(key: xkb::Keysym) -> String {
     let name = xkb::keysym_get_name(key);
     let label = match name.as_str() {
-        "Left" => "←",
-        "Right" => "→",
-        "Up" => "↑",
-        "Down" => "↓",
-        "Return" | "KP_Enter" => "⏎",
+        "Left" => "Left",
+        "Right" => "Right",
+        "Up" => "Up",
+        "Down" => "Down",
+        "Return" | "KP_Enter" => "Enter",
         "Escape" => "Esc",
         "space" => "Space",
         "Tab" => "Tab",
         "ISO_Left_Tab" => "Tab",
-        "BackSpace" => "⌫",
+        "BackSpace" => "Backspace",
         "Delete" => "Del",
         "Insert" => "Ins",
         "Home" => "Home",

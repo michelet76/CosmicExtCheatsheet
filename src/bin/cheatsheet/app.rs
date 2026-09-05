@@ -53,6 +53,8 @@ pub enum Message {
     Settings(settings::Message),
     KeyPressed(Key, Location, Modifiers),
     ModifiersChanged(Modifiers),
+    /// Run the command behind a clicked row, then close the overlay.
+    Run(String),
     Exit,
     Noop,
 }
@@ -85,7 +87,20 @@ impl App {
     fn reload_shortcuts(&mut self) {
         if let Some(ctx) = &self.shortcuts_ctx {
             self.merged = shortcuts::shortcuts(ctx);
-            self.model = CheatsheetModel::from_shortcuts(&self.merged);
+            self.model = CheatsheetModel::from_shortcuts(&self.merged, &shortcuts::system_actions(ctx));
+        }
+    }
+
+    /// Run a shell command the way the compositor does for `Spawn` bindings.
+    fn run_command(command: &str) {
+        tracing::info!("running: {command}");
+        match std::process::Command::new("/bin/sh").arg("-c").arg(command).spawn() {
+            Ok(mut child) => {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            }
+            Err(why) => tracing::error!("could not run {command:?}: {why}"),
         }
     }
 
@@ -411,8 +426,17 @@ impl cosmic::Application for App {
                 let mut merged = config.defaults;
                 merged.0.extend(config.custom.0);
                 self.merged = merged;
-                self.model = CheatsheetModel::from_shortcuts(&self.merged);
+                let system_actions = self
+                    .shortcuts_ctx
+                    .as_ref()
+                    .map(shortcuts::system_actions)
+                    .unwrap_or_default();
+                self.model = CheatsheetModel::from_shortcuts(&self.merged, &system_actions);
                 Task::none()
+            }
+            Message::Run(command) => {
+                Self::run_command(&command);
+                self.hide()
             }
             Message::Settings(message) => self.update_settings(message),
             Message::ModifiersChanged(modifiers) => {
@@ -457,7 +481,7 @@ impl cosmic::Application for App {
 
     fn view_window(&self, id: window::Id) -> Element<'_, Message> {
         if id == self.overlay_id {
-            return cheatsheet::overlay(&self.model, Message::Hide, Message::OpenSettings, Message::Noop);
+            return cheatsheet::overlay(&self.model, Message::Hide, Message::OpenSettings, Message::Noop, Message::Run);
         }
         if Some(id) == self.settings_window {
             let focused = self.core.focused_window().is_some_and(|f| f == id);

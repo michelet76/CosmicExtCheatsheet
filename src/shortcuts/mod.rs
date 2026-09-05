@@ -9,7 +9,7 @@ pub mod localize;
 
 use std::collections::BTreeMap;
 
-use cosmic_settings_config::shortcuts::{self, Action, Binding, Shortcuts};
+use cosmic_settings_config::shortcuts::{self, Action, Binding, Shortcuts, SystemActions};
 
 pub use categories::CategoryKind;
 
@@ -21,6 +21,10 @@ pub struct Entry {
     /// Each inner vec is one key combination rendered as chips, e.g.
     /// `["Super", "Shift", "←"]`.
     pub bindings: Vec<Vec<String>>,
+    /// Shell command that performs this action, when one exists (system
+    /// actions and custom `Spawn` bindings). Compositor-internal actions such
+    /// as focus or workspace switching have none and cannot be triggered.
+    pub command: Option<String>,
 }
 
 /// A titled group of entries.
@@ -41,7 +45,7 @@ impl CheatsheetModel {
     /// Load from the compositor config (defaults + custom).
     pub fn load() -> Self {
         match shortcuts::context() {
-            Ok(ctx) => Self::from_shortcuts(&shortcuts::shortcuts(&ctx)),
+            Ok(ctx) => Self::from_shortcuts(&shortcuts::shortcuts(&ctx), &shortcuts::system_actions(&ctx)),
             Err(why) => {
                 tracing::error!("could not open shortcuts config: {why}");
                 Self::default()
@@ -49,8 +53,9 @@ impl CheatsheetModel {
         }
     }
 
-    /// Build from an already merged map of bindings.
-    pub fn from_shortcuts(shortcuts: &Shortcuts) -> Self {
+    /// Build from an already merged map of bindings plus the commands behind
+    /// system actions.
+    pub fn from_shortcuts(shortcuts: &Shortcuts, system_actions: &SystemActions) -> Self {
         // Group every binding by its action. `Action: Ord`, and the enum's
         // declaration order keeps related actions (Focus(..), Workspace(n),
         // System(..)) next to each other.
@@ -69,10 +74,17 @@ impl CheatsheetModel {
         let mut categories: BTreeMap<CategoryKind, Vec<Entry>> = BTreeMap::new();
         for (action, mut bindings) in by_action {
             bindings.sort_by_key(|b| keys::sort_key(b));
+            let command = match action {
+                Action::System(system) => system_actions.get(system).cloned(),
+                Action::Spawn(command) => Some(command.clone()),
+                _ => None,
+            }
+            .filter(|c| !c.trim().is_empty());
             let entry = Entry {
                 action: action.clone(),
                 label: localize::action_label(action, bindings.first().copied()),
                 bindings: bindings.into_iter().map(keys::chips).collect(),
+                command,
             };
             categories
                 .entry(categories::category_of(action))

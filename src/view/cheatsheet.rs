@@ -17,7 +17,13 @@ const MAX_COLUMNS: usize = 4;
 
 /// Build the full-surface overlay: a dimmed backdrop (click closes) with a
 /// centred card listing every category.
-pub fn overlay<'a, M>(model: &'a CheatsheetModel, on_close: M, on_settings: M, on_noop: M) -> Element<'a, M>
+pub fn overlay<'a, M>(
+    model: &'a CheatsheetModel,
+    on_close: M,
+    on_settings: M,
+    on_noop: M,
+    on_run: fn(String) -> M,
+) -> Element<'a, M>
 where
     M: Clone + 'static,
 {
@@ -59,7 +65,7 @@ where
             for col in cols {
                 let mut column = Column::new().spacing(spacing.space_m).width(Length::FillPortion(1));
                 for category in col {
-                    column = column.push(category_card(category));
+                    column = column.push(category_card(category, on_run));
                 }
                 layout = layout.push(column);
             }
@@ -112,20 +118,39 @@ where
     mouse_area(backdrop).on_press(on_close).into()
 }
 
-fn category_card<'a, M: 'static>(category: &'a Category) -> Element<'a, M> {
+fn category_card<'a, M: Clone + 'static>(category: &'a Category, on_run: fn(String) -> M) -> Element<'a, M> {
     let spacing = theme::spacing();
-    let mut list = Column::new().spacing(spacing.space_xxs);
+    let muted = muted_color();
+    let mut list = Column::new().spacing(spacing.space_xxxs);
     list = list.push(text::heading(&category.title));
     for entry in &category.entries {
+        let runnable = entry.command.is_some();
         let mut combos = Column::new().spacing(spacing.space_xxxs).align_x(Alignment::End);
         for chips in &entry.bindings {
-            combos = combos.push(chip_row(chips));
+            combos = combos.push(chip_row(chips, runnable));
         }
+        let label = if runnable {
+            text::body(&entry.label)
+        } else {
+            text::body(&entry.label).class(theme::Text::Color(muted))
+        };
         let line = Row::new()
             .align_y(Alignment::Center)
             .spacing(spacing.space_s)
-            .push(text::body(&entry.label).width(Length::Fill))
+            .push(label.width(Length::Fill))
             .push(combos);
+        let line: Element<'a, M> = match &entry.command {
+            Some(command) => button::custom(line)
+                .class(theme::Button::Text)
+                .width(Length::Fill)
+                .padding([spacing.space_xxxs, spacing.space_xs])
+                .on_press(on_run(command.clone()))
+                .into(),
+            None => container(line)
+                .width(Length::Fill)
+                .padding([spacing.space_xxxs, spacing.space_xs])
+                .into(),
+        };
         list = list.push(line);
     }
     container(list)
@@ -135,12 +160,19 @@ fn category_card<'a, M: 'static>(category: &'a Category) -> Element<'a, M> {
         .into()
 }
 
-fn chip_row<'a, M: 'static>(chips: &'a [String]) -> Element<'a, M> {
+/// Text colour for rows that cannot be triggered by clicking.
+fn muted_color() -> Color {
+    let mut color = Color::from(theme::active().cosmic().on_bg_color());
+    color.a = 0.5;
+    color
+}
+
+fn chip_row<'a, M: 'static>(chips: &'a [String], enabled: bool) -> Element<'a, M> {
     let spacing = theme::spacing();
     let mut r = Row::new().spacing(spacing.space_xxxs).align_y(Alignment::Center);
     let last = chips.len().saturating_sub(1);
     for (i, chip) in chips.iter().enumerate() {
-        r = r.push(chip_widget(chip));
+        r = r.push(chip_widget(chip, enabled));
         if i != last {
             r = r.push(text::caption("+"));
         }
@@ -148,19 +180,24 @@ fn chip_row<'a, M: 'static>(chips: &'a [String]) -> Element<'a, M> {
     r.into()
 }
 
-fn chip_widget<'a, M: 'static>(label: &'a str) -> Element<'a, M> {
+fn chip_widget<'a, M: 'static>(label: &'a str, enabled: bool) -> Element<'a, M> {
+    let alpha = if enabled { 1.0 } else { 0.55 };
     container(text::caption_heading(label))
         .padding([2, 7])
-        .class(theme::Container::custom(|theme| {
+        .class(theme::Container::custom(move |theme| {
             let cosmic = theme.cosmic();
+            let with_alpha = |mut c: Color| {
+                c.a *= alpha;
+                c
+            };
             container::Style {
-                background: Some(Color::from(cosmic.secondary_component_color()).into()),
+                background: Some(with_alpha(Color::from(cosmic.secondary_component_color())).into()),
                 border: Border {
                     radius: cosmic.radius_s().into(),
                     width: 1.0,
-                    color: Color::from(cosmic.secondary_container_divider()),
+                    color: with_alpha(Color::from(cosmic.secondary_container_divider())),
                 },
-                text_color: Some(Color::from(cosmic.on_secondary_component_color())),
+                text_color: Some(with_alpha(Color::from(cosmic.on_secondary_component_color()))),
                 ..Default::default()
             }
         }))
