@@ -1,6 +1,6 @@
 id: io.github.michelet76.CosmicExtCheatsheet
 runtime: org.freedesktop.Platform
-runtime-version: '25.08'
+runtime-version: '26.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -15,7 +15,7 @@ finish-args:
   # The cheatsheet reads the compositor's keyboard shortcuts and writes its own
   # entry into the user's custom shortcuts, which is how the global key
   # combination is registered. cosmic-comp watches this directory.
-  - --filesystem=xdg-config/cosmic:create
+  - --filesystem=xdg-config/cosmic
 
   # The shipped shortcut defaults live in the host's /usr/share/cosmic. Flatpak
   # reserves /usr, so read-only host-os access is the only way to reach them;
@@ -61,4 +61,5 @@ modules:
       - type: git
         url: https://github.com/michelet76/CosmicExtCheatsheet.git
         tag: v0.1.0
+        commit: 45d7e8999be4b60d1423aab92c7dcce79e145319
       - cargo-sources.json
